@@ -152,8 +152,7 @@ export class AuthService {
   async forgotPassword(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
     // ตอบเหมือนกันเสมอ ไม่เปิดเผยว่าอีเมลนี้มีในระบบหรือไม่
-    const message =
-      'หากอีเมลนี้อยู่ในระบบ จะได้รับลิงก์สำหรับตั้งรหัสผ่านใหม่';
+    const message = 'หากอีเมลนี้อยู่ในระบบ จะได้รับลิงก์สำหรับตั้งรหัสผ่านใหม่';
     if (!user || !user.is_active) return { message };
 
     const token = randomBytes(32).toString('hex');

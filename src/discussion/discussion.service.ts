@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { IndexingService } from '../ai-search/indexing.service';
 import {
   CreateDiscussionDto,
   CreateReplyDto,
@@ -22,7 +23,10 @@ const authorSelect = {
 
 @Injectable()
 export class DiscussionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly indexing: IndexingService,
+  ) {}
 
   async findAll(params: {
     page?: number;
@@ -203,6 +207,10 @@ export class DiscussionService {
           ]
         : []),
     ]);
+    if (reply.is_best_answer) {
+      // best answer หาย → กระทู้ไม่ solved แล้ว worker จะถอน chunk ออก
+      await this.indexing.enqueue('DISCUSSION', discussionId);
+    }
     return { message: 'ลบคำตอบเรียบร้อย' };
   }
 
@@ -236,6 +244,8 @@ export class DiscussionService {
         data: { is_solved: true },
       }),
     ]);
+    // กระทู้ solved แล้ว → เข้าฐานความรู้ AI (title + คำถาม + best answer)
+    await this.indexing.enqueue('DISCUSSION', discussionId);
     return { message: 'เลือกคำตอบที่ดีที่สุดเรียบร้อย' };
   }
 
@@ -251,6 +261,7 @@ export class DiscussionService {
       where: { id },
       data: { deleted_at: new Date() },
     });
+    await this.indexing.enqueue('DISCUSSION', id); // worker ถอน chunk ของกระทู้ที่ถูกลบ
     return { message: 'ลบกระทู้เรียบร้อย' };
   }
 

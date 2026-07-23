@@ -7,6 +7,7 @@ import { ArticleStatus, Prisma } from '@prisma/client';
 import slugify from 'slugify';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { IndexingService } from '../ai-search/indexing.service';
 import {
   CreateArticleDto,
   CreateCommentDto,
@@ -24,7 +25,10 @@ const authorSelect = {
 
 @Injectable()
 export class ArticleService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly indexing: IndexingService,
+  ) {}
 
   async findAll(params: {
     page?: number;
@@ -94,7 +98,7 @@ export class ArticleService {
   async create(authorId: string, dto: CreateArticleDto) {
     const slug = await this.uniqueSlug(dto.title);
     const status = dto.status ?? ArticleStatus.DRAFT;
-    return this.prisma.article.create({
+    const article = await this.prisma.article.create({
       data: {
         author_id: authorId,
         category_id: dto.category_id,
@@ -107,6 +111,10 @@ export class ArticleService {
         published_at: status === ArticleStatus.PUBLISHED ? new Date() : null,
       },
     });
+    if (status === ArticleStatus.PUBLISHED) {
+      await this.indexing.enqueue('ARTICLE', article.id);
+    }
+    return article;
   }
 
   async update(
@@ -126,29 +134,35 @@ export class ArticleService {
     const becomesPublished =
       dto.status === ArticleStatus.PUBLISHED && !article.published_at;
 
-    return this.prisma.$transaction(async (tx) => {
-      if (dto.content && dto.content !== article.content) {
-        const last = await tx.articleVersion.findFirst({
-          where: { article_id: id },
-          orderBy: { version_no: 'desc' },
-        });
-        await tx.articleVersion.create({
+    return this.prisma
+      .$transaction(async (tx) => {
+        if (dto.content && dto.content !== article.content) {
+          const last = await tx.articleVersion.findFirst({
+            where: { article_id: id },
+            orderBy: { version_no: 'desc' },
+          });
+          await tx.articleVersion.create({
+            data: {
+              article_id: id,
+              version_no: (last?.version_no ?? 0) + 1,
+              content: article.content,
+              edited_by: userId,
+            },
+          });
+        }
+        return tx.article.update({
+          where: { id },
           data: {
-            article_id: id,
-            version_no: (last?.version_no ?? 0) + 1,
-            content: article.content,
-            edited_by: userId,
+            ...dto,
+            ...(becomesPublished ? { published_at: new Date() } : {}),
           },
         });
-      }
-      return tx.article.update({
-        where: { id },
-        data: {
-          ...dto,
-          ...(becomesPublished ? { published_at: new Date() } : {}),
-        },
+      })
+      .then(async (updated) => {
+        // re-index เมื่อเผยแพร่/แก้เนื้อหา — ถ้าถูก unpublish worker จะถอน chunk ให้เอง
+        await this.indexing.enqueue('ARTICLE', updated.id);
+        return updated;
       });
-    });
   }
 
   async softDelete(id: string, userId: string, isAdmin: boolean) {
@@ -163,6 +177,7 @@ export class ArticleService {
       where: { id },
       data: { deleted_at: new Date() },
     });
+    await this.indexing.enqueue('ARTICLE', id); // worker ถอน chunk ของบทความที่ถูกลบ
     return { message: 'ลบบทความเรียบร้อย' };
   }
 
