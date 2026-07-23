@@ -180,6 +180,21 @@ export class DiscussionService {
     return { message: 'เลือกคำตอบที่ดีที่สุดเรียบร้อย' };
   }
 
+  async softDelete(id: string, userId: string, isAdmin: boolean) {
+    const discussion = await this.prisma.discussion.findFirst({
+      where: { id, deleted_at: null },
+    });
+    if (!discussion) throw new NotFoundException('ไม่พบกระทู้นี้');
+    if (discussion.author_id !== userId && !isAdmin) {
+      throw new ForbiddenException('คุณไม่มีสิทธิ์ลบกระทู้นี้');
+    }
+    await this.prisma.discussion.update({
+      where: { id },
+      data: { deleted_at: new Date() },
+    });
+    return { message: 'ลบกระทู้เรียบร้อย' };
+  }
+
   async toggleLike(discussionId: string, userId: string) {
     const existing = await this.prisma.discussionLike.findUnique({
       where: {

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -45,6 +46,16 @@ export class DiscussionController {
   @UseGuards(JwtAuthGuard)
   create(@CurrentUser() user: AuthedUser, @Body() dto: CreateDiscussionDto) {
     return this.discussions.create(user.id, dto);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  remove(@Param('id') id: string, @CurrentUser() user: AuthedUser) {
+    return this.discussions.softDelete(
+      id,
+      user.id,
+      user.role.role_name === 'ADMIN',
+    );
   }
 
   @Post(':id/replies')
