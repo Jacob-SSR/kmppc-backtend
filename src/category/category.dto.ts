@@ -9,3 +9,14 @@ export class CreateCategoryDto {
   @IsString()
   description?: string;
 }
+
+export class UpdateCategoryDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty({ message: 'กรุณากรอกชื่อหมวดหมู่' })
+  category_name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
