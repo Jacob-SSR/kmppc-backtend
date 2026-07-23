@@ -1,0 +1,640 @@
+// schema-v1.0 (frozen) — Knowledge Management System โรงพยาบาลศรีสุข
+// ห้ามแก้ schema นี้ระหว่าง sprint แรก ยกเว้น bug เชิงโครงสร้างจริง
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextIndex"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+}
+
+enum ConversationType {
+  DIRECT
+  GROUP
+}
+
+enum NotificationType {
+  COMMENT
+  REPLY
+  BEST_ANSWER
+  MENTION
+  LIKE
+  SYSTEM
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  RESOLVED
+}
+
+enum IndexStatus {
+  PENDING
+  INDEXING
+  DONE
+  FAILED
+}
+
+enum KnowledgeDocType {
+  MANUAL
+  SOP
+  FAQ
+}
+
+enum ChunkSourceType {
+  ARTICLE
+  DISCUSSION
+  DOCUMENT
+}
+
+// ---------- Core ----------
+
+model User {
+  id                      String    @id @default(uuid())
+  role_id                 String
+  dept_id                 String
+  employee_no             String    @unique
+  username                String    @unique
+  password_hash           String
+  fname                   String
+  lname                   String
+  email                   String    @unique
+  phone                   String?
+  position                String?
+  profile_image           String?
+  profile_image_public_id String?
+  is_active               Boolean   @default(true)
+  last_login              DateTime?
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+
+  role       Role       @relation(fields: [role_id], references: [id], onDelete: Restrict)
+  department Department @relation(fields: [dept_id], references: [id], onDelete: Restrict)
+
+  password_reset_tokens PasswordResetToken[]
+  sessions              UserSession[]
+  articles              Article[]            @relation("ArticleAuthor")
+  article_versions      ArticleVersion[]     @relation("VersionEditor")
+  comments              Comment[]
+  comment_likes         CommentLike[]
+  article_likes         ArticleLike[]
+  article_views         ArticleView[]
+  discussions           Discussion[]         @relation("DiscussionAuthor")
+  discussion_likes      DiscussionLike[]
+  replies               Reply[]              @relation("ReplyAuthor")
+  reply_likes           ReplyLike[]
+  attachments           Attachment[]         @relation("AttachmentUploader")
+  bookmarks             Bookmark[]
+  notifications         Notification[]       @relation("NotificationRecipient")
+  notification_actions  Notification[]       @relation("NotificationActor")
+  search_logs           SearchLog[]
+  activity_logs         ActivityLog[]
+  conversations_created Conversation[]       @relation("ConversationCreator")
+  conversation_members  ConversationMember[]
+  messages              Message[]            @relation("MessageSender")
+  reports_made          Report[]             @relation("ReportReporter")
+  reports_reviewed      Report[]             @relation("ReportReviewer")
+  knowledge_documents   KnowledgeDocument[]  @relation("KnowledgeUploader")
+  ai_search_logs        AiSearchLog[]
+  system_settings       SystemSetting[]      @relation("SettingUpdater")
+
+  @@map("km_user")
+}
+
+model Role {
+  id          String  @id @default(uuid())
+  role_name   String  @unique
+  description String?
+  users       User[]
+
+  @@map("km_role")
+}
+
+model Department {
+  id          String  @id @default(uuid())
+  dept_name   String
+  dept_code   String  @unique
+  description String?
+
+  users               User[]
+  knowledge_documents KnowledgeDocument[]
+
+  @@map("km_department")
+}
+
+model Category {
+  id            String  @id @default(uuid())
+  category_name String  @unique
+  description   String?
+
+  articles    Article[]
+  discussions Discussion[]
+
+  @@map("km_category")
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  user_id    String
+  token      String    @unique
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@index([user_id])
+  @@map("km_password_reset_token")
+}
+
+// ---------- Article ----------
+
+model Article {
+  id                    String        @id @default(uuid())
+  author_id             String
+  category_id           String
+  title                 String
+  slug                  String        @unique
+  content               String        @db.LongText
+  excerpt               String?       @db.Text
+  cover_image           String?
+  cover_image_public_id String?
+  status                ArticleStatus @default(DRAFT)
+  is_pinned             Boolean       @default(false)
+  view_count            Int           @default(0)
+  published_at          DateTime?
+  deleted_at            DateTime?
+  created_at            DateTime      @default(now())
+  updated_at            DateTime      @updatedAt
+
+  author   User     @relation("ArticleAuthor", fields: [author_id], references: [id], onDelete: Restrict)
+  category Category @relation(fields: [category_id], references: [id], onDelete: Restrict)
+
+  versions    ArticleVersion[]
+  tags        ArticleTag[]
+  comments    Comment[]
+  likes       ArticleLike[]
+  views       ArticleView[]
+  attachments Attachment[]
+  bookmarks   Bookmark[]
+  reports     Report[]
+
+  @@index([category_id, status])
+  @@fulltext([title, content])
+  @@map("km_article")
+}
+
+model ArticleVersion {
+  id         String   @id @default(uuid())
+  article_id String
+  version_no Int
+  content    String   @db.LongText
+  edited_by  String
+  edited_at  DateTime @default(now())
+
+  article Article @relation(fields: [article_id], references: [id], onDelete: Cascade)
+  editor  User    @relation("VersionEditor", fields: [edited_by], references: [id], onDelete: Restrict)
+
+  @@index([article_id])
+  @@map("km_article_version")
+}
+
+model Tag {
+  id       String @id @default(uuid())
+  tag_name String @unique
+
+  articles    ArticleTag[]
+  discussions DiscussionTag[]
+
+  @@map("km_tag")
+}
+
+model ArticleTag {
+  article_id String
+  tag_id     String
+
+  article Article @relation(fields: [article_id], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+
+  @@id([article_id, tag_id])
+  @@map("km_article_tag")
+}
+
+model Comment {
+  id         String    @id @default(uuid())
+  article_id String
+  user_id    String
+  content    String    @db.Text
+  deleted_at DateTime?
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+
+  article Article       @relation(fields: [article_id], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  likes   CommentLike[]
+  reports Report[]
+
+  @@index([article_id])
+  @@map("km_comment")
+}
+
+model CommentLike {
+  id         String   @id @default(uuid())
+  comment_id String
+  user_id    String
+  created_at DateTime @default(now())
+
+  comment Comment @relation(fields: [comment_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@unique([comment_id, user_id])
+  @@map("km_comment_like")
+}
+
+model ArticleLike {
+  id         String   @id @default(uuid())
+  article_id String
+  user_id    String
+  created_at DateTime @default(now())
+
+  article Article @relation(fields: [article_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@unique([article_id, user_id])
+  @@map("km_article_like")
+}
+
+model ArticleView {
+  id         String   @id @default(uuid())
+  article_id String
+  user_id    String
+  viewed_at  DateTime @default(now())
+
+  article Article @relation(fields: [article_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@index([article_id, user_id])
+  @@map("km_article_view")
+}
+
+// ---------- Discussion ----------
+
+model Discussion {
+  id           String    @id @default(uuid())
+  author_id    String
+  category_id  String
+  title        String
+  content      String    @db.LongText
+  is_anonymous Boolean   @default(false)
+  is_solved    Boolean   @default(false)
+  view_count   Int       @default(0)
+  deleted_at   DateTime?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  author   User     @relation("DiscussionAuthor", fields: [author_id], references: [id], onDelete: Restrict)
+  category Category @relation(fields: [category_id], references: [id], onDelete: Restrict)
+
+  tags        DiscussionTag[]
+  likes       DiscussionLike[]
+  replies     Reply[]
+  attachments Attachment[]
+  bookmarks   Bookmark[]
+  reports     Report[]
+
+  @@index([category_id])
+  @@fulltext([title, content])
+  @@map("km_discussion")
+}
+
+model DiscussionTag {
+  discussion_id String
+  tag_id        String
+
+  discussion Discussion @relation(fields: [discussion_id], references: [id], onDelete: Cascade)
+  tag        Tag        @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+
+  @@id([discussion_id, tag_id])
+  @@map("km_discussion_tag")
+}
+
+model DiscussionLike {
+  id            String   @id @default(uuid())
+  discussion_id String
+  user_id       String
+  created_at    DateTime @default(now())
+
+  discussion Discussion @relation(fields: [discussion_id], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@unique([discussion_id, user_id])
+  @@map("km_discussion_like")
+}
+
+model Reply {
+  id              String    @id @default(uuid())
+  discussion_id   String
+  user_id         String
+  parent_reply_id String?
+  content         String    @db.Text
+  is_anonymous    Boolean   @default(false)
+  is_best_answer  Boolean   @default(false)
+  deleted_at      DateTime?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  discussion    Discussion  @relation(fields: [discussion_id], references: [id], onDelete: Cascade)
+  author        User        @relation("ReplyAuthor", fields: [user_id], references: [id], onDelete: Restrict)
+  parent_reply  Reply?      @relation("ReplyParent", fields: [parent_reply_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  child_replies Reply[]     @relation("ReplyParent")
+  likes         ReplyLike[]
+  reports       Report[]
+
+  @@index([discussion_id])
+  @@map("km_reply")
+}
+
+model ReplyLike {
+  id         String   @id @default(uuid())
+  reply_id   String
+  user_id    String
+  created_at DateTime @default(now())
+
+  reply Reply @relation(fields: [reply_id], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@unique([reply_id, user_id])
+  @@map("km_reply_like")
+}
+
+// ---------- Shared ----------
+
+model Attachment {
+  id            String   @id @default(uuid())
+  article_id    String?
+  discussion_id String?
+  message_id    String?
+  filename      String
+  file_url      String
+  public_id     String
+  filetype      String
+  filesize      Int
+  uploaded_by   String
+  uploaded_at   DateTime @default(now())
+
+  article    Article?    @relation(fields: [article_id], references: [id], onDelete: Cascade)
+  discussion Discussion? @relation(fields: [discussion_id], references: [id], onDelete: Cascade)
+  message    Message?    @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  uploader   User        @relation("AttachmentUploader", fields: [uploaded_by], references: [id], onDelete: Restrict)
+
+  @@index([article_id])
+  @@index([discussion_id])
+  @@index([message_id])
+  @@map("km_attachment")
+}
+
+model Bookmark {
+  id            String   @id @default(uuid())
+  user_id       String
+  article_id    String?
+  discussion_id String?
+  created_at    DateTime @default(now())
+
+  user       User        @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  article    Article?    @relation(fields: [article_id], references: [id], onDelete: Cascade)
+  discussion Discussion? @relation(fields: [discussion_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, article_id])
+  @@unique([user_id, discussion_id])
+  @@map("km_bookmark")
+}
+
+model Notification {
+  id         String           @id @default(uuid())
+  user_id    String
+  actor_id   String?
+  type       NotificationType
+  title      String
+  message    String           @db.Text
+  url        String
+  is_read    Boolean          @default(false)
+  created_at DateTime         @default(now())
+
+  recipient User  @relation("NotificationRecipient", fields: [user_id], references: [id], onDelete: Restrict)
+  actor     User? @relation("NotificationActor", fields: [actor_id], references: [id], onDelete: Restrict)
+
+  @@index([user_id, is_read])
+  @@map("km_notification")
+}
+
+model SearchLog {
+  id          String   @id @default(uuid())
+  user_id     String
+  keyword     String
+  searched_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@index([user_id])
+  @@map("km_search_log")
+}
+
+model ActivityLog {
+  id           String   @id @default(uuid())
+  user_id      String
+  action       String
+  target_table String
+  target_id    String
+  ip_address   String?
+  created_at   DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@index([user_id])
+  @@map("km_activity_log")
+}
+
+// ---------- Chat ----------
+
+model Conversation {
+  id         String           @id @default(uuid())
+  type       ConversationType
+  name       String?
+  created_by String
+  created_at DateTime         @default(now())
+  updated_at DateTime         @updatedAt
+
+  creator  User                 @relation("ConversationCreator", fields: [created_by], references: [id], onDelete: Restrict)
+  members  ConversationMember[]
+  messages Message[]
+
+  @@map("km_conversation")
+}
+
+model ConversationMember {
+  id                   String    @id @default(uuid())
+  conversation_id      String
+  user_id              String
+  is_admin             Boolean   @default(false)
+  joined_at            DateTime  @default(now())
+  left_at              DateTime?
+  last_read_message_id String?
+
+  conversation      Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  user              User         @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  last_read_message Message?     @relation("MemberLastRead", fields: [last_read_message_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([conversation_id, user_id])
+  @@map("km_conversation_member")
+}
+
+model Message {
+  id              String      @id @default(uuid())
+  conversation_id String
+  sender_id       String
+  message         String      @db.Text
+  message_type    MessageType @default(TEXT)
+  created_at      DateTime    @default(now())
+  edited_at       DateTime?
+  deleted_at      DateTime?
+
+  conversation Conversation         @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  sender       User                 @relation("MessageSender", fields: [sender_id], references: [id], onDelete: Restrict)
+  attachments  Attachment[]
+  read_markers ConversationMember[] @relation("MemberLastRead")
+
+  @@index([conversation_id, created_at])
+  @@map("km_message")
+}
+
+model Report {
+  id            String       @id @default(uuid())
+  reporter_id   String
+  article_id    String?
+  discussion_id String?
+  reply_id      String?
+  comment_id    String?
+  reason        String       @db.Text
+  status        ReportStatus @default(PENDING)
+  reviewed_by   String?
+  reviewed_at   DateTime?
+  created_at    DateTime     @default(now())
+
+  reporter   User        @relation("ReportReporter", fields: [reporter_id], references: [id], onDelete: Restrict)
+  reviewer   User?       @relation("ReportReviewer", fields: [reviewed_by], references: [id], onDelete: Restrict)
+  article    Article?    @relation(fields: [article_id], references: [id], onDelete: Cascade)
+  discussion Discussion? @relation(fields: [discussion_id], references: [id], onDelete: Cascade)
+  reply      Reply?      @relation(fields: [reply_id], references: [id], onDelete: Cascade)
+  comment    Comment?    @relation(fields: [comment_id], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("km_report")
+}
+
+// ---------- AI Search (RAG) ----------
+
+model KnowledgeDocument {
+  id             String           @id @default(uuid())
+  title          String
+  doc_type       KnowledgeDocType
+  description    String?          @db.Text
+  file_url       String?
+  file_public_id String?
+  content        String           @db.LongText
+  index_status   IndexStatus      @default(PENDING)
+  indexed_at     DateTime?
+  dept_id        String?
+  uploaded_by    String
+  is_active      Boolean          @default(true)
+  deleted_at     DateTime?
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+
+  department Department? @relation(fields: [dept_id], references: [id], onDelete: SetNull)
+  uploader   User        @relation("KnowledgeUploader", fields: [uploaded_by], references: [id], onDelete: Restrict)
+
+  @@map("km_knowledge_document")
+}
+
+model KnowledgeChunk {
+  id              String          @id @default(uuid())
+  source_type     ChunkSourceType
+  source_id       String
+  chunk_index     Int
+  content         String          @db.Text
+  embedding       Json
+  embedding_model String
+  token_count     Int
+  created_at      DateTime        @default(now())
+
+  @@index([source_type, source_id])
+  @@map("km_knowledge_chunk")
+}
+
+model AiSearchLog {
+  id          String   @id @default(uuid())
+  user_id     String
+  query       String   @db.Text
+  answer      String   @db.LongText
+  sources     Json
+  provider    String
+  model       String
+  latency_ms  Int
+  was_helpful Boolean?
+  created_at  DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@index([user_id])
+  @@map("km_ai_search_log")
+}
+
+// ---------- Session ----------
+
+model UserSession {
+  id                 String    @id @default(uuid())
+  user_id            String
+  refresh_token_hash String    @unique
+  user_agent         String?
+  ip_address         String?
+  expires_at         DateTime
+  revoked_at         DateTime?
+  created_at         DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@index([user_id])
+  @@map("km_user_session")
+}
+
+// ---------- Setting ----------
+
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  updated_by  String?
+  updated_at  DateTime @updatedAt
+
+  updater User? @relation("SettingUpdater", fields: [updated_by], references: [id], onDelete: Restrict)
+
+  @@map("km_system_setting")
+}
