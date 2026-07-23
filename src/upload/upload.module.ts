@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
+import { randomBytes } from 'crypto';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import * as streamifier from 'streamifier';
 import { memoryStorage } from 'multer';
@@ -46,11 +47,26 @@ export class UploadController {
     if (!file) {
       throw new BadRequestException('กรุณาแนบไฟล์ที่ต้องการอัปโหลด');
     }
+    // multer ถอดรหัสชื่อไฟล์เป็น latin1 — แปลงกลับเป็น utf8 ไม่งั้นชื่อไทยเพี้ยน
+    const originalName = Buffer.from(file.originalname, 'latin1').toString(
+      'utf8',
+    );
+    // ไฟล์ที่ไม่ใช่รูปต้องเป็น resource_type 'raw' (PDF แบบ image ถูก Cloudinary
+    // บล็อกการเปิดดู) และใส่นามสกุลไว้ใน public_id ให้ browser เปิดถูกประเภท
+    const isImage = file.mimetype.startsWith('image/');
+    const ext = originalName.includes('.')
+      ? originalName.split('.').pop()?.toLowerCase()
+      : undefined;
+    const uniqueId = `${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
     let result: UploadApiResponse;
     try {
       result = await new Promise<UploadApiResponse>((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
-          { folder: 'km-system', resource_type: 'auto' },
+          {
+            folder: 'km-system',
+            resource_type: isImage ? 'image' : 'raw',
+            public_id: !isImage && ext ? `${uniqueId}.${ext}` : uniqueId,
+          },
           (error, uploaded) => {
             if (error || !uploaded) {
               reject(
@@ -73,7 +89,7 @@ export class UploadController {
       public_id: result.public_id,
       filetype: file.mimetype,
       filesize: file.size,
-      filename: file.originalname,
+      filename: originalName,
     };
   }
 
