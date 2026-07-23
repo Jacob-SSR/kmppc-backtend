@@ -1,0 +1,31 @@
+From d7923afa78784e3e22be363cb97fe21e64860886 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 23 Jul 2026 04:54:46 +0000
+Subject: [PATCH] Use prisma db push on container start instead of migrate
+ deploy
+
+The repo has no prisma/migrations directory, so migrate deploy fails with
+P3005 against a non-empty database. db push syncs the schema in place
+without requiring migration files and preserves existing data.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017pLQyFBTjzdM6nk4GbcaLY
+---
+ Dockerfile | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/Dockerfile b/Dockerfile
+index e42ca0f..1bdb83e 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -11,5 +11,5 @@ COPY . .
+ RUN pnpm prisma:generate && pnpm build
+ 
+ EXPOSE 3001
+-# รัน migration ค้างไว้ก่อน แล้วค่อยสตาร์ท API
+-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
++# repo ยังไม่มี prisma/migrations — ใช้ db push sync schema (ไม่ลบข้อมูลเดิม) แล้วค่อยสตาร์ท API
++CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/main"]
+-- 
+2.43.0
+
