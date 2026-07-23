@@ -41,6 +41,36 @@ export class UserService {
     throw new ConflictException('มีเลขประจำตัวพนักงานนี้อยู่แล้ว');
   }
 
+  // รายชื่อสำหรับเริ่มแชท — เฉพาะบัญชีที่ใช้งานอยู่ ไม่รวมตัวเอง เปิดเผยข้อมูลพื้นฐานเท่านั้น
+  async directory(viewerId: string, q?: string) {
+    const keyword = q?.trim();
+    return this.prisma.user.findMany({
+      where: {
+        is_active: true,
+        id: { not: viewerId },
+        ...(keyword
+          ? {
+              OR: [
+                { fname: { contains: keyword } },
+                { lname: { contains: keyword } },
+                { username: { contains: keyword } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        fname: true,
+        lname: true,
+        position: true,
+        profile_image: true,
+        department: { select: { dept_name: true } },
+      },
+      orderBy: { fname: 'asc' },
+      take: 20,
+    });
+  }
+
   async findAll(params: {
     page?: number;
     limit?: number;

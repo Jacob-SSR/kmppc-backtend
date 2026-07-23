@@ -45,6 +45,12 @@ export class UserController {
     return this.userService.create(dto);
   }
 
+  // รายชื่อเพื่อนร่วมงานสำหรับเริ่มแชท — ทุกคนที่ login เรียกได้ เปิดเผยเฉพาะข้อมูลพื้นฐาน
+  @Get('directory')
+  directory(@CurrentUser() user: User, @Query('q') q?: string) {
+    return this.userService.directory(user.id, q);
+  }
+
   // สำคัญ: '/me' ต้องประกาศก่อน '/:id' ไม่งั้น 'me' จะถูกจับเป็น id
   @Patch('me')
   updateMe(@CurrentUser() user: User, @Body() dto: UpdateProfileDto) {
