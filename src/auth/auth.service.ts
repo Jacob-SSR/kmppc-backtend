@@ -149,6 +149,56 @@ export class AuthService {
     });
   }
 
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    // ตอบเหมือนกันเสมอ ไม่เปิดเผยว่าอีเมลนี้มีในระบบหรือไม่
+    const message =
+      'หากอีเมลนี้อยู่ในระบบ จะได้รับลิงก์สำหรับตั้งรหัสผ่านใหม่';
+    if (!user || !user.is_active) return { message };
+
+    const token = randomBytes(32).toString('hex');
+    await this.prisma.passwordResetToken.create({
+      data: {
+        user_id: user.id,
+        token: sha256(token),
+        expires_at: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
+    // TODO: ต่อ email service แล้วส่งลิงก์ `${FRONTEND_URL}/reset-password?token=...`
+    // ระหว่างยังไม่มี mailer: คืน token ตรง ๆ เฉพาะนอก production เพื่อให้ทดสอบได้
+    if (this.config.get('NODE_ENV') !== 'production') {
+      return { message, reset_token: token };
+    }
+    return { message };
+  }
+
+  async resetPassword(token: string, password: string) {
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: { token: sha256(token) },
+    });
+    if (!record || record.used_at || record.expires_at < new Date()) {
+      throw new UnauthorizedException(
+        'ลิงก์ตั้งรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว',
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: record.user_id },
+        data: { password_hash: await bcrypt.hash(password, 10) },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: record.id },
+        data: { used_at: new Date() },
+      }),
+      // เปลี่ยนรหัสแล้วบังคับออกจากระบบทุกเครื่อง
+      this.prisma.userSession.updateMany({
+        where: { user_id: record.user_id, revoked_at: null },
+        data: { revoked_at: new Date() },
+      }),
+    ]);
+    return { message: 'ตั้งรหัสผ่านใหม่เรียบร้อย กรุณาเข้าสู่ระบบอีกครั้ง' };
+  }
+
   private async issueRefreshToken(
     userId: string,
     meta: { userAgent?: string; ip?: string },
