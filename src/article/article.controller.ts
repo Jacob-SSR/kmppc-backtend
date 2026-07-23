@@ -17,6 +17,7 @@ import {
   UpdateCommentDto,
 } from './article.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 interface AuthedUser {
@@ -44,8 +45,9 @@ export class ArticleController {
   }
 
   @Get(':slug')
-  findOne(@Param('slug') slug: string) {
-    return this.articles.findBySlug(slug);
+  @UseGuards(OptionalJwtAuthGuard)
+  findOne(@Param('slug') slug: string, @CurrentUser() user: AuthedUser | null) {
+    return this.articles.findBySlug(slug, user?.id);
   }
 
   @Post()

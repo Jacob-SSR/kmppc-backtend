@@ -99,9 +99,28 @@ export class DiscussionService {
       data: { view_count: { increment: 1 } },
     });
 
+    let liked_by_me = false;
+    let bookmarked_by_me = false;
+    if (viewerId) {
+      const [like, bookmark] = await Promise.all([
+        this.prisma.discussionLike.findUnique({
+          where: {
+            discussion_id_user_id: { discussion_id: id, user_id: viewerId },
+          },
+        }),
+        this.prisma.bookmark.findFirst({
+          where: { discussion_id: id, user_id: viewerId },
+        }),
+      ]);
+      liked_by_me = !!like;
+      bookmarked_by_me = !!bookmark;
+    }
+
     const { replies, ...rest } = discussion;
     return {
       ...serializeAuthored(rest, viewerId),
+      liked_by_me,
+      bookmarked_by_me,
       replies: replies.map((r) => serializeAuthored(r, viewerId)),
     };
   }

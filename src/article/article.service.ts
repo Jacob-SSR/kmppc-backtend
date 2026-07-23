@@ -81,6 +81,8 @@ export class ArticleService {
     });
     if (!article) throw new NotFoundException('ไม่พบบทความนี้');
 
+    let liked_by_me = false;
+    let bookmarked_by_me = false;
     if (viewerId) {
       // counter cache: insert ArticleView + increment view_count ใน transaction เดียว
       await this.prisma.$transaction([
@@ -92,8 +94,20 @@ export class ArticleService {
           data: { view_count: { increment: 1 } },
         }),
       ]);
+      const [like, bookmark] = await Promise.all([
+        this.prisma.articleLike.findUnique({
+          where: {
+            article_id_user_id: { article_id: article.id, user_id: viewerId },
+          },
+        }),
+        this.prisma.bookmark.findFirst({
+          where: { article_id: article.id, user_id: viewerId },
+        }),
+      ]);
+      liked_by_me = !!like;
+      bookmarked_by_me = !!bookmark;
     }
-    return article;
+    return { ...article, liked_by_me, bookmarked_by_me };
   }
 
   async create(authorId: string, dto: CreateArticleDto) {

@@ -16,6 +16,7 @@ import {
   UpdateReplyDto,
 } from './discussion.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 interface AuthedUser {
@@ -43,8 +44,9 @@ export class DiscussionController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.discussions.findOne(id);
+  @UseGuards(OptionalJwtAuthGuard)
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthedUser | null) {
+    return this.discussions.findOne(id, user?.id);
   }
 
   @Post()
