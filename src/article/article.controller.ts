@@ -10,7 +10,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ArticleService } from './article.service';
-import { CreateArticleDto, UpdateArticleDto } from './article.dto';
+import {
+  CreateArticleDto,
+  CreateCommentDto,
+  UpdateArticleDto,
+  UpdateCommentDto,
+} from './article.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -78,5 +83,56 @@ export class ArticleController {
   @UseGuards(JwtAuthGuard)
   toggleLike(@Param('id') id: string, @CurrentUser() user: AuthedUser) {
     return this.articles.toggleLike(id, user.id);
+  }
+
+  @Get(':id/comments')
+  listComments(@Param('id') id: string) {
+    return this.articles.listComments(id);
+  }
+
+  @Post(':id/comments')
+  @UseGuards(JwtAuthGuard)
+  addComment(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthedUser,
+    @Body() dto: CreateCommentDto,
+  ) {
+    return this.articles.addComment(id, user.id, dto);
+  }
+
+  @Patch(':id/comments/:commentId')
+  @UseGuards(JwtAuthGuard)
+  updateComment(
+    @Param('id') id: string,
+    @Param('commentId') commentId: string,
+    @CurrentUser() user: AuthedUser,
+    @Body() dto: UpdateCommentDto,
+  ) {
+    return this.articles.updateComment(id, commentId, user.id, dto);
+  }
+
+  @Delete(':id/comments/:commentId')
+  @UseGuards(JwtAuthGuard)
+  removeComment(
+    @Param('id') id: string,
+    @Param('commentId') commentId: string,
+    @CurrentUser() user: AuthedUser,
+  ) {
+    return this.articles.deleteComment(
+      id,
+      commentId,
+      user.id,
+      user.role.role_name === 'ADMIN',
+    );
+  }
+
+  @Post(':id/comments/:commentId/like')
+  @UseGuards(JwtAuthGuard)
+  toggleCommentLike(
+    @Param('id') id: string,
+    @Param('commentId') commentId: string,
+    @CurrentUser() user: AuthedUser,
+  ) {
+    return this.articles.toggleCommentLike(id, commentId, user.id);
   }
 }

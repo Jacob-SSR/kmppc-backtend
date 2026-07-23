@@ -5,7 +5,11 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateDiscussionDto, CreateReplyDto } from './discussion.dto';
+import {
+  CreateDiscussionDto,
+  CreateReplyDto,
+  UpdateReplyDto,
+} from './discussion.dto';
 import { serializeAuthored } from './anonymous.serializer';
 
 const authorSelect = {
@@ -145,6 +149,61 @@ export class DiscussionService {
       });
     }
     return serializeAuthored(reply, userId);
+  }
+
+  async updateReply(
+    discussionId: string,
+    replyId: string,
+    userId: string,
+    dto: UpdateReplyDto,
+  ) {
+    const reply = await this.prisma.reply.findFirst({
+      where: { id: replyId, discussion_id: discussionId, deleted_at: null },
+    });
+    if (!reply) throw new NotFoundException('ไม่พบคำตอบนี้');
+    if (reply.user_id !== userId) {
+      throw new ForbiddenException('คุณไม่มีสิทธิ์แก้ไขคำตอบนี้');
+    }
+    const updated = await this.prisma.reply.update({
+      where: { id: replyId },
+      data: { content: dto.content },
+      include: {
+        author: { select: authorSelect },
+        _count: { select: { likes: true } },
+      },
+    });
+    return serializeAuthored(updated, userId);
+  }
+
+  async softDeleteReply(
+    discussionId: string,
+    replyId: string,
+    userId: string,
+    isAdmin: boolean,
+  ) {
+    const reply = await this.prisma.reply.findFirst({
+      where: { id: replyId, discussion_id: discussionId, deleted_at: null },
+    });
+    if (!reply) throw new NotFoundException('ไม่พบคำตอบนี้');
+    if (reply.user_id !== userId && !isAdmin) {
+      throw new ForbiddenException('คุณไม่มีสิทธิ์ลบคำตอบนี้');
+    }
+    await this.prisma.$transaction([
+      this.prisma.reply.update({
+        where: { id: replyId },
+        data: { deleted_at: new Date(), is_best_answer: false },
+      }),
+      // ถ้าลบคำตอบที่ถูกเลือกเป็น best answer กระทู้ต้องกลับเป็นยังไม่แก้ปัญหา
+      ...(reply.is_best_answer
+        ? [
+            this.prisma.discussion.update({
+              where: { id: discussionId },
+              data: { is_solved: false },
+            }),
+          ]
+        : []),
+    ]);
+    return { message: 'ลบคำตอบเรียบร้อย' };
   }
 
   async markBestAnswer(

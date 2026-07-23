@@ -18,6 +18,12 @@ export class CreateDiscussionDto {
   is_anonymous?: boolean;
 }
 
+export class UpdateReplyDto {
+  @IsString()
+  @IsNotEmpty({ message: 'กรุณากรอกคำตอบ' })
+  content: string;
+}
+
 export class CreateReplyDto {
   @IsString()
   @IsNotEmpty({ message: 'กรุณากรอกคำตอบ' })

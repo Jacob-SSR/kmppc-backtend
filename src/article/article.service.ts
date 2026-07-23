@@ -7,7 +7,12 @@ import { ArticleStatus, Prisma } from '@prisma/client';
 import slugify from 'slugify';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateArticleDto, UpdateArticleDto } from './article.dto';
+import {
+  CreateArticleDto,
+  CreateCommentDto,
+  UpdateArticleDto,
+  UpdateCommentDto,
+} from './article.dto';
 
 const authorSelect = {
   id: true,
@@ -171,6 +176,115 @@ export class ArticleService {
     }
     await this.prisma.articleLike.create({
       data: { article_id: articleId, user_id: userId },
+    });
+    return { liked: true };
+  }
+
+  async listComments(articleId: string) {
+    const article = await this.prisma.article.findFirst({
+      where: { id: articleId, deleted_at: null },
+    });
+    if (!article) throw new NotFoundException('ไม่พบบทความนี้');
+    return this.prisma.comment.findMany({
+      where: { article_id: articleId, deleted_at: null },
+      orderBy: { created_at: 'asc' },
+      include: {
+        user: { select: authorSelect },
+        _count: { select: { likes: true } },
+      },
+    });
+  }
+
+  async addComment(articleId: string, userId: string, dto: CreateCommentDto) {
+    const article = await this.prisma.article.findFirst({
+      where: { id: articleId, deleted_at: null },
+    });
+    if (!article) throw new NotFoundException('ไม่พบบทความนี้');
+
+    const comment = await this.prisma.comment.create({
+      data: { article_id: articleId, user_id: userId, content: dto.content },
+      include: {
+        user: { select: authorSelect },
+        _count: { select: { likes: true } },
+      },
+    });
+
+    if (article.author_id !== userId) {
+      await this.prisma.notification.create({
+        data: {
+          user_id: article.author_id,
+          actor_id: userId,
+          type: 'COMMENT',
+          title: 'มีผู้แสดงความคิดเห็นในบทความของคุณ',
+          message: `${comment.user.fname} ${comment.user.lname} แสดงความคิดเห็นในบทความ "${article.title}"`,
+          url: `/articles/${article.slug}`,
+        },
+      });
+    }
+    return comment;
+  }
+
+  async updateComment(
+    articleId: string,
+    commentId: string,
+    userId: string,
+    dto: UpdateCommentDto,
+  ) {
+    const comment = await this.prisma.comment.findFirst({
+      where: { id: commentId, article_id: articleId, deleted_at: null },
+    });
+    if (!comment) throw new NotFoundException('ไม่พบความคิดเห็นนี้');
+    if (comment.user_id !== userId) {
+      throw new ForbiddenException('คุณไม่มีสิทธิ์แก้ไขความคิดเห็นนี้');
+    }
+    return this.prisma.comment.update({
+      where: { id: commentId },
+      data: { content: dto.content },
+      include: {
+        user: { select: authorSelect },
+        _count: { select: { likes: true } },
+      },
+    });
+  }
+
+  async deleteComment(
+    articleId: string,
+    commentId: string,
+    userId: string,
+    isAdmin: boolean,
+  ) {
+    const comment = await this.prisma.comment.findFirst({
+      where: { id: commentId, article_id: articleId, deleted_at: null },
+    });
+    if (!comment) throw new NotFoundException('ไม่พบความคิดเห็นนี้');
+    if (comment.user_id !== userId && !isAdmin) {
+      throw new ForbiddenException('คุณไม่มีสิทธิ์ลบความคิดเห็นนี้');
+    }
+    await this.prisma.comment.update({
+      where: { id: commentId },
+      data: { deleted_at: new Date() },
+    });
+    return { message: 'ลบความคิดเห็นเรียบร้อย' };
+  }
+
+  async toggleCommentLike(
+    articleId: string,
+    commentId: string,
+    userId: string,
+  ) {
+    const comment = await this.prisma.comment.findFirst({
+      where: { id: commentId, article_id: articleId, deleted_at: null },
+    });
+    if (!comment) throw new NotFoundException('ไม่พบความคิดเห็นนี้');
+    const existing = await this.prisma.commentLike.findUnique({
+      where: { comment_id_user_id: { comment_id: commentId, user_id: userId } },
+    });
+    if (existing) {
+      await this.prisma.commentLike.delete({ where: { id: existing.id } });
+      return { liked: false };
+    }
+    await this.prisma.commentLike.create({
+      data: { comment_id: commentId, user_id: userId },
     });
     return { liked: true };
   }

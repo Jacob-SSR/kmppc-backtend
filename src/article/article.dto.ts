@@ -62,3 +62,15 @@ export class UpdateArticleDto {
   @IsBoolean()
   is_pinned?: boolean;
 }
+
+export class CreateCommentDto {
+  @IsString()
+  @IsNotEmpty({ message: 'กรุณากรอกความคิดเห็น' })
+  content: string;
+}
+
+export class UpdateCommentDto {
+  @IsString()
+  @IsNotEmpty({ message: 'กรุณากรอกความคิดเห็น' })
+  content: string;
+}

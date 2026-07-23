@@ -4,12 +4,17 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { DiscussionService } from './discussion.service';
-import { CreateDiscussionDto, CreateReplyDto } from './discussion.dto';
+import {
+  CreateDiscussionDto,
+  CreateReplyDto,
+  UpdateReplyDto,
+} from './discussion.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -66,6 +71,32 @@ export class DiscussionController {
     @Body() dto: CreateReplyDto,
   ) {
     return this.discussions.addReply(id, user.id, dto);
+  }
+
+  @Patch(':id/replies/:replyId')
+  @UseGuards(JwtAuthGuard)
+  updateReply(
+    @Param('id') id: string,
+    @Param('replyId') replyId: string,
+    @CurrentUser() user: AuthedUser,
+    @Body() dto: UpdateReplyDto,
+  ) {
+    return this.discussions.updateReply(id, replyId, user.id, dto);
+  }
+
+  @Delete(':id/replies/:replyId')
+  @UseGuards(JwtAuthGuard)
+  removeReply(
+    @Param('id') id: string,
+    @Param('replyId') replyId: string,
+    @CurrentUser() user: AuthedUser,
+  ) {
+    return this.discussions.softDeleteReply(
+      id,
+      replyId,
+      user.id,
+      user.role.role_name === 'ADMIN',
+    );
   }
 
   @Post(':id/replies/:replyId/best-answer')
