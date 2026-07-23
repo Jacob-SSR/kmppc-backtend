@@ -1,4 +1,19 @@
 services:
+  api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file: .env
+    environment:
+      # ภายใน network ของ compose ใช้ชื่อ service แทน localhost (override ค่าใน .env)
+      DATABASE_URL: mysql://km:${MYSQL_PASSWORD:-kmpass}@mysql:3306/km_ppch
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - mysql
+      - redis
+
   mysql:
     image: mysql:8
     restart: unless-stopped
