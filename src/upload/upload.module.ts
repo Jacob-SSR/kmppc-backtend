@@ -58,7 +58,15 @@ export class UploadController {
     const ext = originalName.includes('.')
       ? originalName.split('.').pop()?.toLowerCase()
       : undefined;
-    const uniqueId = `${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
+    // ตั้ง public_id จากชื่อไฟล์จริง (ตัดอักขระต้องห้ามของ Cloudinary) + รหัสสั้น
+    // กันชื่อชนกัน — ตอนดาวน์โหลดจะได้ชื่อเดิม ไม่ใช่รหัสมั่ว
+    const baseName = originalName.replace(/\.[^/.]+$/, '');
+    const safeBase =
+      baseName
+        .replace(/[?&#\\%<>+/\s]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 80) || 'file';
+    const uniqueId = `${safeBase}_${randomBytes(3).toString('hex')}`;
     let result: UploadApiResponse;
     try {
       result = await new Promise<UploadApiResponse>((resolve, reject) => {
