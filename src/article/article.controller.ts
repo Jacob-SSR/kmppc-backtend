@@ -88,8 +88,12 @@ export class ArticleController {
   }
 
   @Get(':id/comments')
-  listComments(@Param('id') id: string) {
-    return this.articles.listComments(id);
+  @UseGuards(OptionalJwtAuthGuard)
+  listComments(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthedUser | null,
+  ) {
+    return this.articles.listComments(id, user?.id);
   }
 
   @Post(':id/comments')

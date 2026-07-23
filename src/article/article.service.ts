@@ -219,12 +219,12 @@ export class ArticleService {
     return { liked: true };
   }
 
-  async listComments(articleId: string) {
+  async listComments(articleId: string, viewerId?: string) {
     const article = await this.prisma.article.findFirst({
       where: { id: articleId, deleted_at: null },
     });
     if (!article) throw new NotFoundException('ไม่พบบทความนี้');
-    return this.prisma.comment.findMany({
+    const comments = await this.prisma.comment.findMany({
       where: { article_id: articleId, deleted_at: null },
       orderBy: { created_at: 'asc' },
       include: {
@@ -232,6 +232,18 @@ export class ArticleService {
         _count: { select: { likes: true } },
       },
     });
+    if (!viewerId) {
+      return comments.map((c) => ({ ...c, liked_by_me: false }));
+    }
+    const likes = await this.prisma.commentLike.findMany({
+      where: {
+        user_id: viewerId,
+        comment_id: { in: comments.map((c) => c.id) },
+      },
+      select: { comment_id: true },
+    });
+    const likedIds = new Set(likes.map((l) => l.comment_id));
+    return comments.map((c) => ({ ...c, liked_by_me: likedIds.has(c.id) }));
   }
 
   async addComment(articleId: string, userId: string, dto: CreateCommentDto) {
