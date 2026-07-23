@@ -8,6 +8,7 @@ import slugify from 'slugify';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { IndexingService } from '../ai-search/indexing.service';
+import { syncArticleTags } from '../tag/tag.util';
 import {
   CreateArticleDto,
   CreateCommentDto,
@@ -111,6 +112,9 @@ export class ArticleService {
         published_at: status === ArticleStatus.PUBLISHED ? new Date() : null,
       },
     });
+    if (dto.tags) {
+      await syncArticleTags(this.prisma, article.id, dto.tags);
+    }
     if (status === ArticleStatus.PUBLISHED) {
       await this.indexing.enqueue('ARTICLE', article.id);
     }
@@ -134,6 +138,9 @@ export class ArticleService {
     const becomesPublished =
       dto.status === ArticleStatus.PUBLISHED && !article.published_at;
 
+    // แยก tags ออกจากข้อมูลที่ส่งให้ prisma (ไม่ใช่คอลัมน์ของ Article)
+    const { tags, ...data } = dto;
+
     return this.prisma
       .$transaction(async (tx) => {
         if (dto.content && dto.content !== article.content) {
@@ -153,12 +160,15 @@ export class ArticleService {
         return tx.article.update({
           where: { id },
           data: {
-            ...dto,
+            ...data,
             ...(becomesPublished ? { published_at: new Date() } : {}),
           },
         });
       })
       .then(async (updated) => {
+        if (tags) {
+          await syncArticleTags(this.prisma, id, tags);
+        }
         // re-index เมื่อเผยแพร่/แก้เนื้อหา — ถ้าถูก unpublish worker จะถอน chunk ให้เอง
         await this.indexing.enqueue('ARTICLE', updated.id);
         return updated;

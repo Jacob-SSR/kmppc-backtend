@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsEnum,
   IsNotEmpty,
@@ -31,6 +32,11 @@ export class CreateArticleDto {
   @IsOptional()
   @IsEnum(ArticleStatus)
   status?: ArticleStatus;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 }
 
 export class UpdateArticleDto {
@@ -61,6 +67,11 @@ export class UpdateArticleDto {
   @IsOptional()
   @IsBoolean()
   is_pinned?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 }
 
 export class CreateCommentDto {

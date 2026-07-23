@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { LoginDto, RegisterDto } from './dto/auth.dto';
 
 const sha256 = (value: string) =>
@@ -19,6 +20,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly mail: MailService,
   ) {}
 
   private refreshExpiresDays() {
@@ -163,8 +165,15 @@ export class AuthService {
         expires_at: new Date(Date.now() + 60 * 60 * 1000),
       },
     });
-    // TODO: ต่อ email service แล้วส่งลิงก์ `${FRONTEND_URL}/reset-password?token=...`
-    // ระหว่างยังไม่มี mailer: คืน token ตรง ๆ เฉพาะนอก production เพื่อให้ทดสอบได้
+    const frontendUrl =
+      this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+    const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
+
+    if (this.mail.isConfigured()) {
+      await this.mail.sendPasswordReset(user.email, resetUrl);
+      return { message };
+    }
+    // ยังไม่ได้ตั้งค่า SMTP: คืน token ตรง ๆ เฉพาะนอก production เพื่อให้ทดสอบได้
     if (this.config.get('NODE_ENV') !== 'production') {
       return { message, reset_token: token };
     }

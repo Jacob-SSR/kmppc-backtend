@@ -19,6 +19,16 @@ export interface LlmProviderInfo {
   embedding_model: string;
 }
 
+export interface WebSource {
+  title: string;
+  url: string;
+}
+
+export interface WebAnswer {
+  answer: string;
+  sources: WebSource[];
+}
+
 export interface LlmProvider {
   /** สร้างคำตอบจากคำถาม + บริบท (คืน string เต็ม) */
   generateAnswer(params: GenerateAnswerParams): Promise<string>;
@@ -28,6 +38,12 @@ export interface LlmProvider {
 
   /** แปลงข้อความเป็น embedding vectors (ลำดับผลลัพธ์ตรงกับ input) */
   embed(texts: string[]): Promise<number[][]>;
+
+  /**
+   * ตอบคำถามโดยค้นจากอินเทอร์เน็ต (search grounding — optional)
+   * ใช้เมื่อฐานความรู้ภายในไม่มีคำตอบ
+   */
+  generateWebAnswer?(question: string): Promise<WebAnswer>;
 
   /** ข้อมูล provider/model สำหรับบันทึกลง AiSearchLog (optional) */
   info?(): LlmProviderInfo;

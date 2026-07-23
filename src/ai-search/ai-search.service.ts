@@ -45,6 +45,12 @@ export interface AiSearchResult {
   log_id?: string;
 }
 
+/** event ที่ส่งออกทาง SSE: sources → chunk (หลายครั้ง) → done */
+export interface AiSearchStreamEvent {
+  type: 'sources' | 'chunk' | 'done';
+  data: unknown;
+}
+
 @Injectable()
 export class AiSearchService {
   private readonly logger = new Logger(AiSearchService.name);
@@ -104,6 +110,107 @@ export class AiSearchService {
       startedAt,
     );
     return { found: true, answer, sources, log_id: log.id };
+  }
+
+  /**
+   * ถามแบบ streaming (SSE): ยิง event 'sources' ก่อน แล้วทยอยส่ง 'chunk'
+   * จบด้วย 'done' พร้อม log_id — ใช้ retrieval flow เดียวกับ ask()
+   */
+  async *askStream(
+    userId: string,
+    query: string,
+  ): AsyncGenerator<AiSearchStreamEvent> {
+    const startedAt = Date.now();
+    const info = this.llm.info?.() ?? {
+      provider: process.env.AI_PROVIDER ?? 'gemini',
+      chat_model: process.env.GEMINI_CHAT_MODEL ?? 'gemini-2.5-flash',
+      embedding_model:
+        process.env.GEMINI_EMBEDDING_MODEL ?? 'gemini-embedding-001',
+    };
+
+    const [queryEmbedding] = await this.llm.embed([query]);
+    const hits = this.vectorStore.search(queryEmbedding, {
+      topK: TOP_K,
+      minScore: MIN_SCORE,
+    });
+
+    if (hits.length === 0) {
+      const answer =
+        'ไม่พบข้อมูลในฐานความรู้ที่เกี่ยวข้องกับคำถามนี้ ลองปรับคำถามใหม่ หรือตั้งกระทู้ถามในชุมชนได้เลยครับ';
+      const log = await this.saveLog(
+        userId,
+        query,
+        answer,
+        [],
+        info,
+        startedAt,
+      );
+      yield { type: 'sources', data: [] };
+      yield { type: 'chunk', data: answer };
+      yield { type: 'done', data: { found: false, log_id: log.id } };
+      return;
+    }
+
+    const sources = await this.buildSources(hits);
+    yield { type: 'sources', data: sources };
+
+    const context = hits
+      .map((hit, i) => `[แหล่งที่ ${i + 1}]\n${hit.content}`)
+      .join('\n\n---\n\n');
+    const params = { system: SYSTEM_PROMPT, question: query, context };
+
+    let answer = '';
+    if (this.llm.generateAnswerStream) {
+      for await (const piece of this.llm.generateAnswerStream(params)) {
+        answer += piece;
+        yield { type: 'chunk', data: piece };
+      }
+    } else {
+      answer = await this.llm.generateAnswer(params);
+      yield { type: 'chunk', data: answer };
+    }
+
+    const log = await this.saveLog(
+      userId,
+      query,
+      answer,
+      sources,
+      info,
+      startedAt,
+    );
+    yield { type: 'done', data: { found: true, log_id: log.id } };
+  }
+
+  /**
+   * ค้นจากอินเทอร์เน็ต (Google Search grounding) —
+   * ใช้เมื่อผู้ใช้กดปุ่ม "ค้นจากอินเทอร์เน็ต" หลังฐานความรู้ไม่มีคำตอบ
+   */
+  async askWeb(userId: string, query: string) {
+    if (!this.llm.generateWebAnswer) {
+      throw new NotFoundException(
+        'AI provider ปัจจุบันยังไม่รองรับการค้นจากอินเทอร์เน็ต',
+      );
+    }
+    const startedAt = Date.now();
+    const info = this.llm.info?.() ?? {
+      provider: process.env.AI_PROVIDER ?? 'gemini',
+      chat_model: process.env.GEMINI_CHAT_MODEL ?? 'gemini-2.5-flash',
+    };
+
+    const { answer, sources } = await this.llm.generateWebAnswer(query);
+    const log = await this.prisma.aiSearchLog.create({
+      data: {
+        user_id: userId,
+        query,
+        answer,
+        sources: sources.map((s) => ({ title: s.title, url: s.url })),
+        provider: `${info.provider}-web`,
+        model: info.chat_model,
+        latency_ms: Date.now() - startedAt,
+      },
+      select: { id: true },
+    });
+    return { answer, sources, log_id: log.id };
   }
 
   /** บันทึก feedback ว่าคำตอบมีประโยชน์หรือไม่ — แก้ได้เฉพาะ log ของตัวเอง */

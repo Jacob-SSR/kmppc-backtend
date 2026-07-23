@@ -13,6 +13,8 @@ import {
   GenerateAnswerParams,
   LlmProvider,
   LlmProviderInfo,
+  WebAnswer,
+  WebSource,
 } from './llm.provider';
 
 const DEFAULT_CHAT_MODEL = 'gemini-2.5-flash';
@@ -90,6 +92,33 @@ export class GeminiProvider implements LlmProvider {
       const text = chunk.text;
       if (text) yield text;
     }
+  }
+
+  /** ตอบคำถามด้วย Google Search grounding (built-in tool ของ Gemini) */
+  async generateWebAnswer(question: string): Promise<WebAnswer> {
+    const ai = this.getClient();
+    const response = await ai.models.generateContent({
+      model: this.chatModel,
+      contents: question,
+      config: {
+        systemInstruction: [
+          'คุณคือผู้ช่วย AI ของระบบจัดการความรู้ภายในโรงพยาบาล',
+          'ตอบเป็นภาษาไทย สุภาพ กระชับ โดยอ้างอิงจากผลการค้นหาบนอินเทอร์เน็ต',
+        ].join('\n'),
+        tools: [{ googleSearch: {} }],
+      },
+    });
+
+    const sources: WebSource[] = [];
+    const chunks =
+      response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+    for (const chunk of chunks) {
+      const uri = chunk.web?.uri;
+      if (!uri) continue;
+      if (sources.some((s) => s.url === uri)) continue;
+      sources.push({ title: chunk.web?.title ?? uri, url: uri });
+    }
+    return { answer: response.text ?? '', sources };
   }
 
   async embed(texts: string[]): Promise<number[][]> {

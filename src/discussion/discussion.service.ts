@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IndexingService } from '../ai-search/indexing.service';
+import { syncDiscussionTags } from '../tag/tag.util';
 import {
   CreateDiscussionDto,
   CreateReplyDto,
@@ -105,19 +106,21 @@ export class DiscussionService {
     };
   }
 
-  create(authorId: string, dto: CreateDiscussionDto) {
-    return this.prisma.discussion
-      .create({
-        data: {
-          author_id: authorId,
-          category_id: dto.category_id,
-          title: dto.title,
-          content: dto.content,
-          is_anonymous: dto.is_anonymous ?? false,
-        },
-        include: { author: { select: authorSelect }, category: true },
-      })
-      .then((d) => serializeAuthored(d, authorId));
+  async create(authorId: string, dto: CreateDiscussionDto) {
+    const discussion = await this.prisma.discussion.create({
+      data: {
+        author_id: authorId,
+        category_id: dto.category_id,
+        title: dto.title,
+        content: dto.content,
+        is_anonymous: dto.is_anonymous ?? false,
+      },
+      include: { author: { select: authorSelect }, category: true },
+    });
+    if (dto.tags) {
+      await syncDiscussionTags(this.prisma, discussion.id, dto.tags);
+    }
+    return serializeAuthored(discussion, authorId);
   }
 
   async addReply(discussionId: string, userId: string, dto: CreateReplyDto) {
