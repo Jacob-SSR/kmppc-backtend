@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Injectable,
   InternalServerErrorException,
   Module,
   Post,
@@ -110,5 +111,50 @@ export class UploadController {
   }
 }
 
-@Module({ controllers: [UploadController] })
+/** ลบไฟล์บน Cloudinary จาก URL — ใช้ตอน soft delete โพสต์เพื่อไม่ให้ไฟล์ค้าง */
+@Injectable()
+export class UploadService {
+  constructor() {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+    });
+  }
+
+  /** ดึง URL ของ Cloudinary ทั้งหมดจากข้อความ (เนื้อหาโพสต์/ไฟล์แนบ) */
+  static extractUrls(text: string | null | undefined): string[] {
+    if (!text) return [];
+    return text.match(/https?:\/\/res\.cloudinary\.com\/[^\s)\]"']+/g) ?? [];
+  }
+
+  /** best-effort — ลบไม่สำเร็จไม่ทำให้การลบโพสต์ล้ม */
+  async destroyByUrls(urls: string[]): Promise<void> {
+    for (const url of urls) {
+      const match = url.match(
+        /res\.cloudinary\.com\/[^/]+\/(image|raw|video)\/upload\/(?:v\d+\/)?(.+)$/,
+      );
+      if (!match) continue;
+      const resourceType = match[1];
+      let publicId = decodeURIComponent(match[2]);
+      // image URL ลงท้ายด้วยนามสกุล แต่ public_id ไม่มี — raw เก็บนามสกุลไว้ใน public_id
+      if (resourceType === 'image') {
+        publicId = publicId.replace(/\.[^/.]+$/, '');
+      }
+      try {
+        await cloudinary.uploader.destroy(publicId, {
+          resource_type: resourceType,
+        });
+      } catch {
+        // ข้าม — ไฟล์อาจถูกลบไปแล้ว
+      }
+    }
+  }
+}
+
+@Module({
+  controllers: [UploadController],
+  providers: [UploadService],
+  exports: [UploadService],
+})
 export class UploadModule {}

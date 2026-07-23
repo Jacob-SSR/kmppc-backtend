@@ -8,6 +8,7 @@ import slugify from 'slugify';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { IndexingService } from '../ai-search/indexing.service';
+import { UploadService } from '../upload/upload.module';
 import { syncArticleTags } from '../tag/tag.util';
 import {
   CreateArticleDto,
@@ -29,6 +30,7 @@ export class ArticleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly indexing: IndexingService,
+    private readonly uploads: UploadService,
   ) {}
 
   async findAll(params: {
@@ -202,6 +204,11 @@ export class ArticleService {
       data: { deleted_at: new Date() },
     });
     await this.indexing.enqueue('ARTICLE', id); // worker ถอน chunk ของบทความที่ถูกลบ
+    // ลบไฟล์แนบ + รูปหน้าปกบน Cloudinary (best-effort)
+    await this.uploads.destroyByUrls([
+      ...UploadService.extractUrls(article.content),
+      ...UploadService.extractUrls(article.cover_image),
+    ]);
     return { message: 'ลบบทความเรียบร้อย' };
   }
 

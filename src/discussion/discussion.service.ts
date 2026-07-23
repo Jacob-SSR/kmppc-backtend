@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IndexingService } from '../ai-search/indexing.service';
+import { UploadService } from '../upload/upload.module';
 import { syncDiscussionTags } from '../tag/tag.util';
 import {
   CreateDiscussionDto,
@@ -27,6 +28,7 @@ export class DiscussionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly indexing: IndexingService,
+    private readonly uploads: UploadService,
   ) {}
 
   async findAll(params: {
@@ -284,6 +286,10 @@ export class DiscussionService {
       data: { deleted_at: new Date() },
     });
     await this.indexing.enqueue('DISCUSSION', id); // worker ถอน chunk ของกระทู้ที่ถูกลบ
+    // ลบไฟล์แนบใน Cloudinary ที่ฝังอยู่ในเนื้อหา (best-effort)
+    await this.uploads.destroyByUrls(
+      UploadService.extractUrls(discussion.content),
+    );
     return { message: 'ลบกระทู้เรียบร้อย' };
   }
 
