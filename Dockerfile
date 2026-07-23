@@ -11,5 +11,5 @@ COPY . .
 RUN pnpm prisma:generate && pnpm build
 
 EXPOSE 3001
-# รัน migration ค้างไว้ก่อน แล้วค่อยสตาร์ท API
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+# repo ยังไม่มี prisma/migrations — ใช้ db push sync schema (ไม่ลบข้อมูลเดิม) แล้วค่อยสตาร์ท API
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/main"]
