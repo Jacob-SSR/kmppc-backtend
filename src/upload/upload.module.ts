@@ -22,12 +22,15 @@ import { memoryStorage } from 'multer';
 import { IsNotEmpty, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
-// โหมดเก็บไฟล์: UPLOAD_STORAGE=local เก็บบนเครื่องเซิร์ฟเวอร์ (โฟลเดอร์ uploads/
-// เสิร์ฟที่ /uploads) — ถ้าไม่ได้ตั้งและไม่มี CLOUDINARY_* ก็ fallback เป็น local ให้เอง
+// โหมดเก็บไฟล์: รูปภาพเก็บบน Cloudinary เสมอ (ถ้าตั้งค่าไว้) ส่วนไฟล์เอกสาร
+// เก็บ local เมื่อ UPLOAD_STORAGE=local — ไม่มี CLOUDINARY_* เลยก็ local ทั้งหมด
 const UPLOAD_DIR = join(process.cwd(), 'uploads');
 
-const isLocalStorage = (): boolean =>
-  process.env.UPLOAD_STORAGE === 'local' || !process.env.CLOUDINARY_CLOUD_NAME;
+const storeOnCloudinary = (isImage: boolean): boolean => {
+  const cloudinaryReady = !!process.env.CLOUDINARY_CLOUD_NAME;
+  if (!cloudinaryReady) return false;
+  return isImage || process.env.UPLOAD_STORAGE !== 'local';
+};
 
 const publicBase = (): string =>
   (process.env.API_PUBLIC_URL ?? 'http://localhost:3001').replace(/\/+$/, '');
@@ -81,7 +84,7 @@ export class UploadController {
         .slice(0, 80) || 'file';
     const uniqueId = `${safeBase}_${randomBytes(3).toString('hex')}`;
 
-    if (isLocalStorage()) {
+    if (!storeOnCloudinary(isImage)) {
       const filename = ext ? `${uniqueId}.${ext}` : uniqueId;
       try {
         if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
