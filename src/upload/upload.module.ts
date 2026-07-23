@@ -13,11 +13,24 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { randomBytes } from 'crypto';
+import { existsSync, mkdirSync } from 'fs';
+import { unlink, writeFile } from 'fs/promises';
+import { basename, join } from 'path';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import * as streamifier from 'streamifier';
 import { memoryStorage } from 'multer';
 import { IsNotEmpty, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+// โหมดเก็บไฟล์: UPLOAD_STORAGE=local เก็บบนเครื่องเซิร์ฟเวอร์ (โฟลเดอร์ uploads/
+// เสิร์ฟที่ /uploads) — ถ้าไม่ได้ตั้งและไม่มี CLOUDINARY_* ก็ fallback เป็น local ให้เอง
+const UPLOAD_DIR = join(process.cwd(), 'uploads');
+
+const isLocalStorage = (): boolean =>
+  process.env.UPLOAD_STORAGE === 'local' || !process.env.CLOUDINARY_CLOUD_NAME;
+
+const publicBase = (): string =>
+  (process.env.API_PUBLIC_URL ?? 'http://localhost:3001').replace(/\/+$/, '');
 
 export class DeleteUploadDto {
   @IsString()
@@ -67,6 +80,26 @@ export class UploadController {
         .replace(/^_+|_+$/g, '')
         .slice(0, 80) || 'file';
     const uniqueId = `${safeBase}_${randomBytes(3).toString('hex')}`;
+
+    if (isLocalStorage()) {
+      const filename = ext ? `${uniqueId}.${ext}` : uniqueId;
+      try {
+        if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
+        await writeFile(join(UPLOAD_DIR, filename), file.buffer);
+      } catch {
+        throw new InternalServerErrorException(
+          'บันทึกไฟล์บนเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+        );
+      }
+      return {
+        url: `${publicBase()}/uploads/${encodeURIComponent(filename)}`,
+        public_id: `local:${filename}`,
+        filetype: file.mimetype,
+        filesize: file.size,
+        filename: originalName,
+      };
+    }
+
     let result: UploadApiResponse;
     try {
       result = await new Promise<UploadApiResponse>((resolve, reject) => {
@@ -104,6 +137,11 @@ export class UploadController {
 
   @Post('delete')
   async remove(@Body() dto: DeleteUploadDto) {
+    if (dto.public_id.startsWith('local:')) {
+      const name = basename(dto.public_id.slice('local:'.length));
+      await unlink(join(UPLOAD_DIR, name)).catch(() => undefined);
+      return { success: true };
+    }
     try {
       await cloudinary.uploader.destroy(dto.public_id, {
         resource_type: 'image',
@@ -130,15 +168,28 @@ export class UploadService {
     });
   }
 
-  /** ดึง URL ของ Cloudinary ทั้งหมดจากข้อความ (เนื้อหาโพสต์/ไฟล์แนบ) */
+  /** ดึง URL ของไฟล์อัปโหลด (Cloudinary หรือ /uploads local) จากข้อความ */
   static extractUrls(text: string | null | undefined): string[] {
     if (!text) return [];
-    return text.match(/https?:\/\/res\.cloudinary\.com\/[^\s)\]"']+/g) ?? [];
+    const urls = text.match(/https?:\/\/[^\s)\]"']+/g) ?? [];
+    return urls.filter(
+      (u) => u.includes('res.cloudinary.com') || u.includes('/uploads/'),
+    );
   }
 
   /** best-effort — ลบไม่สำเร็จไม่ทำให้การลบโพสต์ล้ม */
   async destroyByUrls(urls: string[]): Promise<void> {
     for (const url of urls) {
+      // ไฟล์ local — ลบจากโฟลเดอร์ uploads (basename กัน path traversal)
+      if (url.includes('/uploads/')) {
+        try {
+          const name = decodeURIComponent(basename(new URL(url).pathname));
+          await unlink(join(UPLOAD_DIR, name));
+        } catch {
+          // ข้าม — ไฟล์อาจถูกลบไปแล้ว
+        }
+        continue;
+      }
       const match = url.match(
         /res\.cloudinary\.com\/[^/]+\/(image|raw|video)\/upload\/(?:v\d+\/)?(.+)$/,
       );
