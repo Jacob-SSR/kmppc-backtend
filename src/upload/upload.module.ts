@@ -74,15 +74,19 @@ export class UploadController {
     const ext = originalName.includes('.')
       ? originalName.split('.').pop()?.toLowerCase()
       : undefined;
-    // ตั้ง public_id จากชื่อไฟล์จริง (ตัดอักขระต้องห้ามของ Cloudinary) + รหัสสั้น
-    // กันชื่อชนกัน — ตอนดาวน์โหลดจะได้ชื่อเดิม ไม่ใช่รหัสมั่ว
+    // ไฟล์เอกสาร: ตั้ง public_id จากชื่อไฟล์จริง (ตัดอักขระต้องห้าม) + รหัสสั้น
+    // เพื่อให้ดาวน์โหลดได้ชื่อเดิม — ส่วนรูปภาพใช้รหัสสั้นล้วน เพราะชื่อไทยที่ถูก
+    // encode ทำ URL ยาวเกินคอลัมน์ cover_image ใน DB (P2000) และรูปแสดง inline
+    // ไม่ต้องการชื่อไฟล์ตอนโหลดอยู่แล้ว
     const baseName = originalName.replace(/\.[^/.]+$/, '');
     const safeBase =
       baseName
         .replace(/[?&#\\%<>+/\s]+/g, '_')
         .replace(/^_+|_+$/g, '')
         .slice(0, 80) || 'file';
-    const uniqueId = `${safeBase}_${randomBytes(3).toString('hex')}`;
+    const uniqueId = isImage
+      ? `${Date.now().toString(36)}${randomBytes(4).toString('hex')}`
+      : `${safeBase}_${randomBytes(3).toString('hex')}`;
 
     if (!storeOnCloudinary(isImage)) {
       const filename = ext ? `${uniqueId}.${ext}` : uniqueId;
