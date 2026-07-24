@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { Prisma, ReportStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { IndexingService } from '../ai-search/indexing.service';
+import { UploadService } from '../upload/upload.module';
 import { CreateReportDto } from './report.dto';
 
 const excerpt = (text: string, length = 120) =>
@@ -12,7 +14,11 @@ const excerpt = (text: string, length = 120) =>
 
 @Injectable()
 export class ReportService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly indexing: IndexingService,
+    private readonly uploads: UploadService,
+  ) {}
 
   async create(reporterId: string, dto: CreateReportDto) {
     const targets = [
@@ -137,6 +143,65 @@ export class ReportService {
       where: { id },
       data: {
         status,
+        reviewed_by: reviewerId,
+        reviewed_at: new Date(),
+      },
+    });
+  }
+
+  /**
+   * ลบเนื้อหาที่ถูกรายงาน (soft delete ตามประเภทเป้าหมาย: บทความ/กระทู้/
+   * คำตอบ/ความคิดเห็น) แล้วปิดรายงานเป็น RESOLVED — ADMIN เท่านั้น
+   */
+  async removeTarget(id: string, reviewerId: string) {
+    const report = await this.prisma.report.findUnique({ where: { id } });
+    if (!report) throw new NotFoundException('ไม่พบรายงานนี้');
+
+    if (report.article_id) {
+      const article = await this.prisma.article.findFirst({
+        where: { id: report.article_id, deleted_at: null },
+      });
+      if (article) {
+        await this.prisma.article.update({
+          where: { id: article.id },
+          data: { deleted_at: new Date() },
+        });
+        await this.indexing.enqueue('ARTICLE', article.id);
+        await this.uploads.destroyByUrls([
+          ...UploadService.extractUrls(article.content),
+          ...UploadService.extractUrls(article.cover_image),
+        ]);
+      }
+    } else if (report.discussion_id) {
+      const discussion = await this.prisma.discussion.findFirst({
+        where: { id: report.discussion_id, deleted_at: null },
+      });
+      if (discussion) {
+        await this.prisma.discussion.update({
+          where: { id: discussion.id },
+          data: { deleted_at: new Date() },
+        });
+        await this.indexing.enqueue('DISCUSSION', discussion.id);
+        await this.uploads.destroyByUrls(
+          UploadService.extractUrls(discussion.content),
+        );
+      }
+    } else if (report.reply_id) {
+      await this.prisma.reply.updateMany({
+        where: { id: report.reply_id, deleted_at: null },
+        data: { deleted_at: new Date() },
+      });
+    } else if (report.comment_id) {
+      await this.prisma.comment.updateMany({
+        where: { id: report.comment_id, deleted_at: null },
+        data: { deleted_at: new Date() },
+      });
+    }
+
+    return this.prisma.report.update({
+      where: { id },
+      data: {
+        status: ReportStatus.RESOLVED,
         reviewed_by: reviewerId,
         reviewed_at: new Date(),
       },
