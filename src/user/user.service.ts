@@ -62,6 +62,7 @@ export class UserService {
         id: true,
         fname: true,
         lname: true,
+        display_name: true,
         position: true,
         profile_image: true,
         department: { select: { dept_name: true } },
@@ -182,12 +183,66 @@ export class UserService {
     return this.sanitize(user);
   }
 
+  /** โปรไฟล์สาธารณะ (สมาชิกที่ login ดูได้) — เปิดเผยชื่อจริง ตำแหน่ง แผนก ไม่เปิดเผยอีเมล/เบอร์ */
+  async publicProfile(id: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id, is_active: true },
+      select: {
+        id: true,
+        fname: true,
+        lname: true,
+        display_name: true,
+        position: true,
+        profile_image: true,
+        created_at: true,
+        department: { select: { id: true, dept_name: true } },
+        _count: {
+          select: {
+            articles: { where: { deleted_at: null, status: 'PUBLISHED' } },
+            discussions: { where: { deleted_at: null, is_anonymous: false } },
+          },
+        },
+      },
+    });
+    if (!user) throw new NotFoundException('ไม่พบผู้ใช้งานนี้');
+    return user;
+  }
+
+  /** หาผู้ใช้จากรหัสเพื่อน (8 ตัวแรกของ id, ไม่สนตัวพิมพ์) — ใช้เริ่มแชท */
+  async findByCode(viewerId: string, code: string) {
+    const normalized = code.trim().toLowerCase();
+    if (normalized.length < 6) {
+      throw new NotFoundException('รหัสเพื่อนต้องมีอย่างน้อย 6 ตัวอักษร');
+    }
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: { startsWith: normalized },
+        is_active: true,
+        NOT: { id: viewerId },
+      },
+      select: {
+        id: true,
+        fname: true,
+        lname: true,
+        display_name: true,
+        position: true,
+        profile_image: true,
+        department: { select: { dept_name: true } },
+      },
+    });
+    if (!user) throw new NotFoundException('ไม่พบผู้ใช้จากรหัสนี้');
+    return user;
+  }
+
   async updateProfile(userId: string, dto: UpdateProfileDto) {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
         ...(dto.fname !== undefined && { fname: dto.fname }),
         ...(dto.lname !== undefined && { lname: dto.lname }),
+        ...(dto.display_name !== undefined && {
+          display_name: dto.display_name.trim() || null,
+        }),
         ...(dto.phone !== undefined && { phone: dto.phone }),
         ...(dto.position !== undefined && { position: dto.position }),
         ...(dto.profile_image !== undefined && {

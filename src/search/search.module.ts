@@ -26,6 +26,7 @@ const authorSelect = {
   id: true,
   fname: true,
   lname: true,
+  display_name: true,
   position: true,
   profile_image: true,
 } satisfies Prisma.UserSelect;

@@ -75,6 +75,8 @@ model User {
   password_hash           String
   fname                   String
   lname                   String
+  // ชื่อที่แสดงในเว็บแทนชื่อจริง (สไตล์เฟซบุ๊ก) — ว่าง = แสดงชื่อจริง
+  display_name            String?
   email                   String    @unique
   phone                   String?
   position                String?

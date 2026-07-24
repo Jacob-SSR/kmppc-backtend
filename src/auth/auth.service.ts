@@ -33,29 +33,33 @@ export class AuthService {
         OR: [
           { username: dto.username },
           { email: dto.email },
-          { employee_no: dto.employee_no },
+          ...(dto.employee_no ? [{ employee_no: dto.employee_no }] : []),
         ],
       },
     });
     if (dup) {
-      throw new ConflictException(
-        'ชื่อผู้ใช้งาน อีเมล หรือเลขประจำตัวพนักงานนี้ถูกใช้แล้ว',
-      );
+      throw new ConflictException('ชื่อผู้ใช้งานหรืออีเมลนี้ถูกใช้แล้ว');
     }
     const staffRole = await this.prisma.role.findUnique({
       where: { role_name: 'STAFF' },
     });
     if (!staffRole) throw new ConflictException('ยังไม่ได้ seed ข้อมูล Role');
 
+    // ไม่กรอกเลขพนักงานแล้ว — สร้างรหัสอัตโนมัติกัน unique ชนกัน
+    const employeeNo =
+      dto.employee_no?.trim() ||
+      `U${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1000)}`;
+
     const user = await this.prisma.user.create({
       data: {
         role_id: staffRole.id,
         dept_id: dto.dept_id,
-        employee_no: dto.employee_no,
+        employee_no: employeeNo,
         username: dto.username,
         password_hash: await bcrypt.hash(dto.password, 10),
         fname: dto.fname,
         lname: dto.lname,
+        display_name: dto.display_name?.trim() || null,
         email: dto.email,
         position: dto.position,
       },

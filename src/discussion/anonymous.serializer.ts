@@ -6,6 +6,7 @@ export interface AuthorPublic {
   id: string;
   fname: string;
   lname: string;
+  display_name?: string | null;
   position: string | null;
   profile_image: string | null;
 }
@@ -14,6 +15,7 @@ const ANONYMOUS_AUTHOR = {
   id: null,
   fname: 'ไม่ระบุตัวตน',
   lname: '',
+  display_name: null,
   position: null,
   profile_image: null,
 } as const;

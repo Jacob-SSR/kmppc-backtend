@@ -51,6 +51,18 @@ export class UserController {
     return this.userService.directory(user.id, q);
   }
 
+  // โปรไฟล์สาธารณะของสมาชิก — ทุกคนที่ login ดูได้ (เห็นชื่อจริง สไตล์เฟซบุ๊ก)
+  @Get('profile/:id')
+  publicProfile(@Param('id') id: string) {
+    return this.userService.publicProfile(id);
+  }
+
+  // ค้นหาเพื่อนด้วยรหัสผู้ใช้ (8 ตัวแรกของ id) — ใช้แอดเพื่อนเริ่มแชท
+  @Get('by-code/:code')
+  findByCode(@CurrentUser() user: User, @Param('code') code: string) {
+    return this.userService.findByCode(user.id, code);
+  }
+
   // สำคัญ: '/me' ต้องประกาศก่อน '/:id' ไม่งั้น 'me' จะถูกจับเป็น id
   @Patch('me')
   updateMe(@CurrentUser() user: User, @Body() dto: UpdateProfileDto) {

@@ -16,6 +16,7 @@ const memberUserSelect = {
   id: true,
   fname: true,
   lname: true,
+  display_name: true,
   profile_image: true,
 } satisfies Prisma.UserSelect;
 

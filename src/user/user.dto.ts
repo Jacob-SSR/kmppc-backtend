@@ -102,6 +102,11 @@ export class UpdateProfileDto {
   @IsString()
   fname?: string;
 
+  // ชื่อที่แสดงในเว็บ — ส่งค่าว่างเพื่อกลับไปใช้ชื่อจริง
+  @IsOptional()
+  @IsString()
+  display_name?: string;
+
   @IsOptional()
   @IsString()
   lname?: string;

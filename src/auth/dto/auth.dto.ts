@@ -22,9 +22,15 @@ export class LoginDto {
 }
 
 export class RegisterDto {
+  // ไม่บังคับแล้ว — ถ้าไม่ส่งมา ระบบสร้างรหัสอัตโนมัติ (คอลัมน์เป็น unique)
+  @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'กรุณากรอกเลขประจำตัวพนักงาน' })
-  employee_no: string;
+  employee_no?: string;
+
+  // ชื่อที่แสดงในเว็บ — ว่าง = ใช้ชื่อจริง
+  @IsOptional()
+  @IsString()
+  display_name?: string;
 
   @IsString()
   @IsNotEmpty({ message: 'กรุณากรอกชื่อ' })
