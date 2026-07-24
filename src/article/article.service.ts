@@ -71,6 +71,19 @@ export class ArticleService {
     return { items, total, page, limit };
   }
 
+  // บทความของฉันทั้งหมด (รวมฉบับร่าง) — ใช้ในแดชบอร์ด
+  async findMine(userId: string) {
+    return this.prisma.article.findMany({
+      where: { author_id: userId, deleted_at: null },
+      orderBy: { created_at: 'desc' },
+      include: {
+        category: true,
+        author: { select: authorSelect },
+        _count: { select: { comments: true, likes: true } },
+      },
+    });
+  }
+
   async findBySlug(slug: string, viewerId?: string) {
     const article = await this.prisma.article.findFirst({
       where: { slug, deleted_at: null },

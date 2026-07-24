@@ -44,6 +44,13 @@ export class ArticleController {
     });
   }
 
+  // สำคัญ: 'mine' ต้องประกาศก่อน ':slug' ไม่งั้นถูกจับเป็น slug
+  @Get('mine')
+  @UseGuards(JwtAuthGuard)
+  findMine(@CurrentUser() user: AuthedUser) {
+    return this.articles.findMine(user.id);
+  }
+
   @Get(':slug')
   @UseGuards(OptionalJwtAuthGuard)
   findOne(@Param('slug') slug: string, @CurrentUser() user: AuthedUser | null) {
