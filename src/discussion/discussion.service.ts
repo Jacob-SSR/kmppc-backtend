@@ -36,6 +36,8 @@ export class DiscussionService {
     page?: number;
     limit?: number;
     category_id?: string;
+    tag_id?: string;
+    sort?: string;
     q?: string;
     viewerId?: string;
   }) {
@@ -44,6 +46,7 @@ export class DiscussionService {
     const where: Prisma.DiscussionWhereInput = {
       deleted_at: null,
       ...(params.category_id ? { category_id: params.category_id } : {}),
+      ...(params.tag_id ? { tags: { some: { tag_id: params.tag_id } } } : {}),
       ...(params.q
         ? {
             OR: [
@@ -53,10 +56,19 @@ export class DiscussionService {
           }
         : {}),
     };
+    // เรียงตามที่เลือก
+    const sortOrder: Record<string, Prisma.DiscussionOrderByWithRelationInput> =
+      {
+        latest: { created_at: 'desc' },
+        oldest: { created_at: 'asc' },
+        views: { view_count: 'desc' },
+        likes: { likes: { _count: 'desc' } },
+        replies: { replies: { _count: 'desc' } },
+      };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.discussion.findMany({
         where,
-        orderBy: { created_at: 'desc' },
+        orderBy: sortOrder[params.sort ?? 'latest'] ?? sortOrder.latest,
         skip: (page - 1) * limit,
         take: limit,
         include: {

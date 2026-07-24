@@ -37,6 +37,8 @@ export class ArticleService {
     page?: number;
     limit?: number;
     category_id?: string;
+    tag_id?: string;
+    sort?: string;
     q?: string;
   }) {
     const page = Math.max(1, params.page ?? 1);
@@ -45,6 +47,7 @@ export class ArticleService {
       deleted_at: null,
       status: ArticleStatus.PUBLISHED,
       ...(params.category_id ? { category_id: params.category_id } : {}),
+      ...(params.tag_id ? { tags: { some: { tag_id: params.tag_id } } } : {}),
       ...(params.q
         ? {
             OR: [
@@ -54,10 +57,19 @@ export class ArticleService {
           }
         : {}),
     };
+    // เรียงตามที่เลือก — บทความปักหมุดขึ้นก่อนเสมอ
+    const sortOrder: Record<string, Prisma.ArticleOrderByWithRelationInput> = {
+      latest: { published_at: 'desc' },
+      oldest: { published_at: 'asc' },
+      views: { view_count: 'desc' },
+      likes: { likes: { _count: 'desc' } },
+      comments: { comments: { _count: 'desc' } },
+    };
+    const orderBy = sortOrder[params.sort ?? 'latest'] ?? sortOrder.latest;
     const [items, total] = await this.prisma.$transaction([
       this.prisma.article.findMany({
         where,
-        orderBy: [{ is_pinned: 'desc' }, { published_at: 'desc' }],
+        orderBy: [{ is_pinned: 'desc' }, orderBy],
         skip: (page - 1) * limit,
         take: limit,
         include: {

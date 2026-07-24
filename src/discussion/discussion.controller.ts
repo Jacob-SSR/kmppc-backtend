@@ -34,12 +34,16 @@ export class DiscussionController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('category_id') category_id?: string,
+    @Query('tag_id') tag_id?: string,
+    @Query('sort') sort?: string,
     @Query('q') q?: string,
   ) {
     return this.discussions.findAll({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       category_id,
+      tag_id,
+      sort,
       q,
     });
   }
