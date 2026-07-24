@@ -134,7 +134,51 @@ export class ArticleService {
       liked_by_me = !!like;
       bookmarked_by_me = !!bookmark;
     }
-    return { ...article, liked_by_me, bookmarked_by_me };
+    // ยอดกดลิงก์ / ยอดดาวน์โหลดไฟล์ในบทความ — นับจาก ActivityLog (ดู track())
+    const [link_click_count, file_download_count] = await Promise.all([
+      this.prisma.activityLog.count({
+        where: {
+          action: 'LINK_CLICK',
+          target_table: 'km_article',
+          target_id: article.id,
+        },
+      }),
+      this.prisma.activityLog.count({
+        where: {
+          action: 'FILE_DOWNLOAD',
+          target_table: 'km_article',
+          target_id: article.id,
+        },
+      }),
+    ]);
+    return {
+      ...article,
+      liked_by_me,
+      bookmarked_by_me,
+      link_click_count,
+      file_download_count,
+    };
+  }
+
+  /**
+   * บันทึกการกดลิงก์ (kind=link) หรือดาวน์โหลดไฟล์แนบ (kind=file) ในบทความ
+   * ลง ActivityLog — ใช้รวมยอดแสดงบนหน้าบทความ (นับเฉพาะผู้ใช้ที่ login)
+   */
+  async track(articleId: string, userId: string, kind: 'link' | 'file') {
+    const article = await this.prisma.article.findFirst({
+      where: { id: articleId, deleted_at: null },
+      select: { id: true },
+    });
+    if (!article) throw new NotFoundException('ไม่พบบทความนี้');
+    await this.prisma.activityLog.create({
+      data: {
+        user_id: userId,
+        action: kind === 'file' ? 'FILE_DOWNLOAD' : 'LINK_CLICK',
+        target_table: 'km_article',
+        target_id: article.id,
+      },
+    });
+    return { success: true };
   }
 
   async create(authorId: string, dto: CreateArticleDto) {

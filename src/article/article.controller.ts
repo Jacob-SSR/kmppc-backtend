@@ -13,6 +13,7 @@ import { ArticleService } from './article.service';
 import {
   CreateArticleDto,
   CreateCommentDto,
+  TrackArticleDto,
   UpdateArticleDto,
   UpdateCommentDto,
 } from './article.dto';
@@ -96,6 +97,17 @@ export class ArticleController {
   @UseGuards(JwtAuthGuard)
   toggleLike(@Param('id') id: string, @CurrentUser() user: AuthedUser) {
     return this.articles.toggleLike(id, user.id);
+  }
+
+  // นับยอดกดลิงก์ / ดาวน์โหลดไฟล์ในบทความ
+  @Post(':id/track')
+  @UseGuards(JwtAuthGuard)
+  track(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthedUser,
+    @Body() dto: TrackArticleDto,
+  ) {
+    return this.articles.track(id, user.id, dto.kind);
   }
 
   @Get(':id/comments')

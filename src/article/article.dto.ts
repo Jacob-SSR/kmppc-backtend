@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -72,6 +73,11 @@ export class UpdateArticleDto {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+}
+
+export class TrackArticleDto {
+  @IsIn(['link', 'file'], { message: 'kind ต้องเป็น link หรือ file' })
+  kind: 'link' | 'file';
 }
 
 export class CreateCommentDto {
