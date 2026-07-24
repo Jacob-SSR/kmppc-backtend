@@ -222,6 +222,10 @@ export class ArticleService {
       ...UploadService.extractUrls(article.content),
       ...UploadService.extractUrls(article.cover_image),
     ]);
+    // ลบแจ้งเตือนที่ชี้มาบทความนี้ — กันผู้ใช้กดแจ้งเตือนแล้วเจอหน้าไม่พบเนื้อหา
+    await this.prisma.notification.deleteMany({
+      where: { url: `/articles/${article.slug}` },
+    });
     return { message: 'ลบบทความเรียบร้อย' };
   }
 

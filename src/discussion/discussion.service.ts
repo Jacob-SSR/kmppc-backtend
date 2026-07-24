@@ -11,6 +11,7 @@ import { syncDiscussionTags } from '../tag/tag.util';
 import {
   CreateDiscussionDto,
   CreateReplyDto,
+  UpdateDiscussionDto,
   UpdateReplyDto,
 } from './discussion.dto';
 import { serializeAuthored } from './anonymous.serializer';
@@ -142,6 +143,33 @@ export class DiscussionService {
       await syncDiscussionTags(this.prisma, discussion.id, dto.tags);
     }
     return serializeAuthored(discussion, authorId);
+  }
+
+  async update(
+    id: string,
+    userId: string,
+    isAdmin: boolean,
+    dto: UpdateDiscussionDto,
+  ) {
+    const discussion = await this.prisma.discussion.findFirst({
+      where: { id, deleted_at: null },
+    });
+    if (!discussion) throw new NotFoundException('ไม่พบกระทู้นี้');
+    if (discussion.author_id !== userId && !isAdmin) {
+      throw new ForbiddenException('ไม่มีสิทธิ์แก้ไขกระทู้นี้');
+    }
+    // แยก tags ออกจากข้อมูลที่ส่งให้ prisma (ไม่ใช่คอลัมน์ของ Discussion)
+    const { tags, ...data } = dto;
+    const updated = await this.prisma.discussion.update({
+      where: { id },
+      data,
+      include: { author: { select: authorSelect }, category: true },
+    });
+    if (tags) {
+      await syncDiscussionTags(this.prisma, id, tags);
+    }
+    await this.indexing.enqueue('DISCUSSION', id); // re-index เนื้อหาใหม่
+    return serializeAuthored(updated, userId);
   }
 
   async addReply(discussionId: string, userId: string, dto: CreateReplyDto) {
@@ -290,6 +318,10 @@ export class DiscussionService {
     await this.uploads.destroyByUrls(
       UploadService.extractUrls(discussion.content),
     );
+    // ลบแจ้งเตือนที่ชี้มากระทู้นี้ — กันผู้ใช้กดแจ้งเตือนแล้วเจอหน้าไม่พบเนื้อหา
+    await this.prisma.notification.deleteMany({
+      where: { url: `/discussions/${id}` },
+    });
     return { message: 'ลบกระทู้เรียบร้อย' };
   }
 

@@ -29,6 +29,25 @@ export class CreateDiscussionDto {
   tags?: string[];
 }
 
+export class UpdateDiscussionDto {
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @IsOptional()
+  @IsString()
+  category_id?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+}
+
 export class UpdateReplyDto {
   @IsString()
   @IsNotEmpty({ message: 'กรุณากรอกคำตอบ' })

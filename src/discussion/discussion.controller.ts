@@ -13,6 +13,7 @@ import { DiscussionService } from './discussion.service';
 import {
   CreateDiscussionDto,
   CreateReplyDto,
+  UpdateDiscussionDto,
   UpdateReplyDto,
 } from './discussion.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -53,6 +54,21 @@ export class DiscussionController {
   @UseGuards(JwtAuthGuard)
   create(@CurrentUser() user: AuthedUser, @Body() dto: CreateDiscussionDto) {
     return this.discussions.create(user.id, dto);
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  update(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthedUser,
+    @Body() dto: UpdateDiscussionDto,
+  ) {
+    return this.discussions.update(
+      id,
+      user.id,
+      user.role.role_name === 'ADMIN',
+      dto,
+    );
   }
 
   @Delete(':id')

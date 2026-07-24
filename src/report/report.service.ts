@@ -171,6 +171,10 @@ export class ReportService {
           ...UploadService.extractUrls(article.content),
           ...UploadService.extractUrls(article.cover_image),
         ]);
+        // ลบแจ้งเตือนที่ชี้มาบทความนี้ด้วย
+        await this.prisma.notification.deleteMany({
+          where: { url: `/articles/${article.slug}` },
+        });
       }
     } else if (report.discussion_id) {
       const discussion = await this.prisma.discussion.findFirst({
@@ -185,6 +189,10 @@ export class ReportService {
         await this.uploads.destroyByUrls(
           UploadService.extractUrls(discussion.content),
         );
+        // ลบแจ้งเตือนที่ชี้มากระทู้นี้ด้วย
+        await this.prisma.notification.deleteMany({
+          where: { url: `/discussions/${discussion.id}` },
+        });
       }
     } else if (report.reply_id) {
       await this.prisma.reply.updateMany({
