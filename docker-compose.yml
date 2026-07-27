@@ -10,6 +10,10 @@ services:
       DATABASE_URL: mysql://km:${MYSQL_PASSWORD:-kmpass}@mysql:3306/km_ppch
       REDIS_HOST: redis
       REDIS_PORT: 6379
+    volumes:
+      # ไฟล์เอกสารที่อัปโหลด (UPLOAD_STORAGE=local) — bind mount โฟลเดอร์เดิม
+      # ไฟล์เก่าที่เคยอัปไว้ตอนรันด้วย pnpm start:dev ใช้ต่อได้เลย
+      - ./uploads:/app/uploads
     depends_on:
       - mysql
       - redis
@@ -23,6 +27,7 @@ services:
       MYSQL_USER: km
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kmpass}
     ports:
+      # ฝั่งเครื่องใช้ 3307 — กันชนกับ MySQL/XAMPP อื่นที่ยึด 3306 อยู่
       - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
