@@ -45,6 +45,69 @@ async function main() {
       create: { dept_code: code, dept_name: name },
     });
   }
+  // ย้ายผู้ใช้/เอกสารจากแผนกชุดเก่า (หน่วยงานย่อย + legacy) → กลุ่มงานใหม่
+  // idempotent: แผนกเก่าที่ย้ายหมดแล้วจะถูกลบในขั้นถัดไป รันซ้ำก็ไม่ทำอะไรเพิ่ม
+  const DEPT_MIGRATION: Record<string, string> = {
+    // legacy ชุดแรกสุด
+    IT: 'DIG',
+    HR: 'GEN',
+    XRAY: 'XRA',
+    PHAR: 'PHC',
+    // หน่วยงานย่อยชุดก่อน → กลุ่มงาน
+    ER: 'NSO',
+    ANS: 'NSO',
+    LR: 'NSO',
+    KID: 'NSO',
+    IPD: 'NSO',
+    IPD2: 'NSO',
+    IPD3: 'NSO',
+    OPD: 'NSO',
+    CSU: 'NSO',
+    CSG: 'PSY',
+    MNU: 'NUT',
+    MAN: 'GEN',
+    MON: 'GEN',
+    ART: 'GEN',
+    BOO: 'GEN',
+    CAL: 'GEN',
+    AMB: 'GEN',
+    GAR: 'GEN',
+    CLC: 'GEN',
+    SEC: 'GEN',
+    CLE: 'GEN',
+    ACC: 'GEN',
+    HRM: 'GEN',
+    LAB: 'MTC',
+    PLA: 'INS',
+    COM: 'DIG',
+    HAC: 'INS',
+    MRD: 'INS',
+    FMC: 'PRI',
+    PHA: 'PHC',
+    RHD: 'RHB',
+    FUN: 'DEN',
+    HED: 'PRI',
+    PO: 'DOC',
+    NCD: 'MED',
+    STR: 'MOV',
+  };
+  for (const [oldCode, newCode] of Object.entries(DEPT_MIGRATION)) {
+    const oldDept = await prisma.department.findUnique({
+      where: { dept_code: oldCode },
+    });
+    if (!oldDept) continue;
+    const newDept = await prisma.department.findUniqueOrThrow({
+      where: { dept_code: newCode },
+    });
+    await prisma.user.updateMany({
+      where: { dept_id: oldDept.id },
+      data: { dept_id: newDept.id },
+    });
+    await prisma.knowledgeDocument.updateMany({
+      where: { dept_id: oldDept.id },
+      data: { dept_id: newDept.id },
+    });
+  }
   // ล้างแผนกชุดเก่าที่ไม่อยู่ในลิสต์ใหม่ — ลบเฉพาะแผนกที่ไม่มีผู้ใช้/เอกสารอ้างอิง
   await prisma.department.deleteMany({
     where: {
