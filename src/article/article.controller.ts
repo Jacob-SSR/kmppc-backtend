@@ -19,6 +19,8 @@ import {
 } from './article.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 interface AuthedUser {
@@ -47,6 +49,15 @@ export class ArticleController {
       sort,
       q,
     });
+  }
+
+  // สถิติรวมทุกบทความสำหรับงานคุณภาพ (ยอดชม/ถูกใจ/คอมเมนต์/กดลิงก์/ดาวน์โหลด)
+  // สำคัญ: static path ต้องประกาศก่อน ':slug'
+  @Get('stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  stats() {
+    return this.articles.stats();
   }
 
   // สำคัญ: 'mine' ต้องประกาศก่อน ':slug' ไม่งั้นถูกจับเป็น slug

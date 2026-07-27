@@ -213,6 +213,21 @@ export class AiSearchService {
     return { answer, sources, log_id: log.id };
   }
 
+  /** ประวัติคำถามของตัวเอง — ล่าสุด 20 รายการ */
+  async history(userId: string) {
+    return this.prisma.aiSearchLog.findMany({
+      where: { user_id: userId },
+      orderBy: { created_at: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        query: true,
+        created_at: true,
+        was_helpful: true,
+      },
+    });
+  }
+
   /** บันทึก feedback ว่าคำตอบมีประโยชน์หรือไม่ — แก้ได้เฉพาะ log ของตัวเอง */
   async feedback(logId: string, userId: string, wasHelpful: boolean) {
     const log = await this.prisma.aiSearchLog.findUnique({

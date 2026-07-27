@@ -7,6 +7,7 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   Post,
   Query,
@@ -16,8 +17,11 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { Observable } from 'rxjs';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AiSearchService } from './ai-search.service';
+import { IndexingService } from './indexing.service';
 import { AskDto, FeedbackDto } from './ai-search.dto';
 
 interface AuthedUser {
@@ -34,11 +38,29 @@ interface SseMessage {
 @UseGuards(JwtAuthGuard)
 @Throttle({ default: { limit: 10, ttl: 60_000 } })
 export class AiSearchController {
-  constructor(private readonly aiSearch: AiSearchService) {}
+  constructor(
+    private readonly aiSearch: AiSearchService,
+    private readonly indexing: IndexingService,
+  ) {}
+
+  // สั่งทำดัชนีใหม่ทั้งระบบ (บทความเผยแพร่/กระทู้ solved/เอกสาร active)
+  // ใช้หลังเพิ่ม GEMINI_API_KEY เพื่อให้ AI รู้จักเนื้อหาเก่าทั้งหมด — ADMIN เท่านั้น
+  @Post('reindex-all')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  reindexAll() {
+    return this.indexing.reindexAll();
+  }
 
   @Post()
   ask(@CurrentUser() user: AuthedUser, @Body() dto: AskDto) {
     return this.aiSearch.ask(user.id, dto.query);
+  }
+
+  // ประวัติคำถาม AI ของตัวเอง (ล่าสุด 20 รายการ)
+  @Get('history')
+  history(@CurrentUser() user: AuthedUser) {
+    return this.aiSearch.history(user.id);
   }
 
   @Sse('stream')

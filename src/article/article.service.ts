@@ -97,6 +97,46 @@ export class ArticleService {
     });
   }
 
+  /** สถิติรวมทุกบทความที่เผยแพร่ — สำหรับหน้ารายงานของ admin/งานคุณภาพ */
+  async stats() {
+    const [articles, logs] = await Promise.all([
+      this.prisma.article.findMany({
+        where: { deleted_at: null, status: ArticleStatus.PUBLISHED },
+        orderBy: { view_count: 'desc' },
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          view_count: true,
+          published_at: true,
+          author: { select: authorSelect },
+          category: { select: { category_name: true } },
+          _count: { select: { comments: true, likes: true } },
+        },
+      }),
+      this.prisma.activityLog.groupBy({
+        by: ['target_id', 'action'],
+        where: {
+          target_table: 'km_article',
+          action: { in: ['LINK_CLICK', 'FILE_DOWNLOAD'] },
+        },
+        _count: { _all: true },
+      }),
+    ]);
+    const counts = new Map<string, { link: number; file: number }>();
+    for (const row of logs) {
+      const entry = counts.get(row.target_id) ?? { link: 0, file: 0 };
+      if (row.action === 'LINK_CLICK') entry.link = row._count._all;
+      else entry.file = row._count._all;
+      counts.set(row.target_id, entry);
+    }
+    return articles.map((a) => ({
+      ...a,
+      link_click_count: counts.get(a.id)?.link ?? 0,
+      file_download_count: counts.get(a.id)?.file ?? 0,
+    }));
+  }
+
   async findBySlug(slug: string, viewerId?: string) {
     const article = await this.prisma.article.findFirst({
       where: { slug, deleted_at: null },

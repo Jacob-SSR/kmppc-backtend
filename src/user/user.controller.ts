@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -79,5 +80,12 @@ export class UserController {
   @Roles('ADMIN')
   update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.userService.update(id, dto);
+  }
+
+  // ลบบัญชีถาวร (บัญชีทดสอบ) — ลบข้อมูลทุกตารางที่อ้างถึง แล้วลบ user
+  @Delete(':id')
+  @Roles('ADMIN')
+  purge(@CurrentUser() user: User, @Param('id') id: string) {
+    return this.userService.purge(id, user.id);
   }
 }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -232,6 +233,68 @@ export class UserService {
     });
     if (!user) throw new NotFoundException('ไม่พบผู้ใช้จากรหัสนี้');
     return user;
+  }
+
+  /**
+   * ลบบัญชีถาวรพร้อมข้อมูลทั้งหมด (โพสต์/คอมเมนต์/แชท/log) — สำหรับบัญชีทดสอบ
+   * ADMIN เท่านั้น, ห้ามลบตัวเอง/บัญชี ADMIN — บัญชีจริงให้ใช้ปิดใช้งาน (is_active)
+   */
+  async purge(id: string, actorId: string) {
+    if (id === actorId) {
+      throw new BadRequestException('ลบบัญชีของตัวเองไม่ได้');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { role: true },
+    });
+    if (!user) throw new NotFoundException('ไม่พบผู้ใช้งานนี้');
+    if (user.role.role_name === 'ADMIN') {
+      throw new BadRequestException(
+        'ลบบัญชีผู้ดูแลระบบไม่ได้ — ใช้ปิดใช้งานแทน',
+      );
+    }
+    // ลำดับสำคัญ: ลบตารางลูกก่อน (FK ทุกตัวเป็น Restrict ตาม schema)
+    await this.prisma.$transaction([
+      this.prisma.activityLog.deleteMany({ where: { user_id: id } }),
+      this.prisma.userSession.deleteMany({ where: { user_id: id } }),
+      this.prisma.passwordResetToken.deleteMany({ where: { user_id: id } }),
+      this.prisma.searchLog.deleteMany({ where: { user_id: id } }),
+      this.prisma.aiSearchLog.deleteMany({ where: { user_id: id } }),
+      this.prisma.notification.deleteMany({
+        where: { OR: [{ user_id: id }, { actor_id: id }] },
+      }),
+      this.prisma.commentLike.deleteMany({ where: { user_id: id } }),
+      this.prisma.articleLike.deleteMany({ where: { user_id: id } }),
+      this.prisma.articleView.deleteMany({ where: { user_id: id } }),
+      this.prisma.discussionLike.deleteMany({ where: { user_id: id } }),
+      this.prisma.replyLike.deleteMany({ where: { user_id: id } }),
+      this.prisma.bookmark.deleteMany({ where: { user_id: id } }),
+      // รายงานที่เขาแจ้ง/ตรวจ และรายงานที่ชี้ไปเนื้อหาของเขา
+      this.prisma.report.deleteMany({
+        where: {
+          OR: [
+            { reporter_id: id },
+            { reviewed_by: id },
+            { article: { author_id: id } },
+            { discussion: { author_id: id } },
+            { reply: { user_id: id } },
+            { comment: { user_id: id } },
+          ],
+        },
+      }),
+      this.prisma.attachment.deleteMany({ where: { uploaded_by: id } }),
+      this.prisma.message.deleteMany({ where: { sender_id: id } }),
+      this.prisma.conversationMember.deleteMany({ where: { user_id: id } }),
+      this.prisma.conversation.deleteMany({ where: { created_by: id } }),
+      this.prisma.comment.deleteMany({ where: { user_id: id } }),
+      this.prisma.reply.deleteMany({ where: { user_id: id } }),
+      this.prisma.discussion.deleteMany({ where: { author_id: id } }),
+      this.prisma.articleVersion.deleteMany({ where: { edited_by: id } }),
+      this.prisma.article.deleteMany({ where: { author_id: id } }),
+      this.prisma.knowledgeDocument.deleteMany({ where: { uploaded_by: id } }),
+      this.prisma.user.delete({ where: { id } }),
+    ]);
+    return { success: true, message: 'ลบบัญชีและข้อมูลทั้งหมดแล้ว' };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
