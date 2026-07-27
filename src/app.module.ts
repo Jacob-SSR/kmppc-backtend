@@ -21,6 +21,7 @@ import { SettingModule } from './setting/setting.module';
 import { SearchModule } from './search/search.module';
 import { ChatModule } from './chat/chat.module';
 import { CommonModule } from './common/common.module';
+import { IssueModule } from './issue/issue.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { AiSearchModule } from './ai-search/ai-search.module';
 import { ActivityLogInterceptor } from './common/activity-log.interceptor';
@@ -53,6 +54,7 @@ import { ActivityLogInterceptor } from './common/activity-log.interceptor';
     SearchModule,
     ChatModule,
     CommonModule,
+    IssueModule,
     KnowledgeModule,
     AiSearchModule,
   ],
