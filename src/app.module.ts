@@ -3,6 +3,8 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import Redis from 'ioredis';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,6 +23,7 @@ import { SettingModule } from './setting/setting.module';
 import { SearchModule } from './search/search.module';
 import { ChatModule } from './chat/chat.module';
 import { CommonModule } from './common/common.module';
+import { FriendModule } from './friend/friend.module';
 import { IssueModule } from './issue/issue.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { AiSearchModule } from './ai-search/ai-search.module';
@@ -29,8 +32,16 @@ import { ActivityLogInterceptor } from './common/activity-log.interceptor';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Global: 100 req / นาที (ต่อ IP — เปลี่ยนเป็น per-user + Redis storage เมื่อเพิ่ม Redis)
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Global: 100 req / นาที ต่อ IP — เก็บตัวนับใน Redis (แชร์ข้ามหลาย instance/restart)
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 100 }],
+      storage: new ThrottlerStorageRedisService(
+        new Redis({
+          host: process.env.REDIS_HOST ?? 'localhost',
+          port: Number(process.env.REDIS_PORT ?? 6379),
+        }),
+      ),
+    }),
     // BullMQ (Redis) — คิวงาน indexing สำหรับ AI Search
     BullModule.forRoot({
       connection: {
@@ -54,6 +65,7 @@ import { ActivityLogInterceptor } from './common/activity-log.interceptor';
     SearchModule,
     ChatModule,
     CommonModule,
+    FriendModule,
     IssueModule,
     KnowledgeModule,
     AiSearchModule,

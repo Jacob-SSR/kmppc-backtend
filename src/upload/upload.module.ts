@@ -20,7 +20,10 @@ import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import * as streamifier from 'streamifier';
 import { memoryStorage } from 'multer';
 import { IsNotEmpty, IsString } from 'class-validator';
+import type { User } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 // โหมดเก็บไฟล์: รูปภาพเก็บบน Cloudinary เสมอ (ถ้าตั้งค่าไว้) ส่วนไฟล์เอกสาร
 // เก็บ local เมื่อ UPLOAD_STORAGE=local — ไม่มี CLOUDINARY_* เลยก็ local ทั้งหมด
@@ -44,12 +47,38 @@ export class DeleteUploadDto {
 @Controller('upload')
 @UseGuards(JwtAuthGuard)
 export class UploadController {
-  constructor() {
+  constructor(private readonly prisma: PrismaService) {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
       api_secret: process.env.CLOUDINARY_API_SECRET,
     });
+  }
+
+  /** เก็บ record ไฟล์ที่อัปโหลดลงตาราง Attachment — ใช้ตรวจสอบ/ตามรอยไฟล์ในระบบ */
+  private async record(
+    userId: string,
+    payload: {
+      url: string;
+      public_id: string;
+      filetype: string;
+      filesize: number;
+      filename: string;
+    },
+  ) {
+    await this.prisma.attachment
+      .create({
+        data: {
+          filename: payload.filename.slice(0, 190),
+          file_url: payload.url,
+          public_id: payload.public_id,
+          filetype: payload.filetype,
+          filesize: payload.filesize,
+          uploaded_by: userId,
+        },
+      })
+      .catch(() => undefined); // best-effort — บันทึกไม่ได้ไม่ทำให้อัปโหลดล้ม
+    return payload;
   }
 
   @Post()
@@ -60,7 +89,10 @@ export class UploadController {
       limits: { fileSize: 10 * 1024 * 1024 },
     }),
   )
-  async upload(@UploadedFile() file?: Express.Multer.File) {
+  async upload(
+    @CurrentUser() user: User,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
     if (!file) {
       throw new BadRequestException('กรุณาแนบไฟล์ที่ต้องการอัปโหลด');
     }
@@ -98,13 +130,13 @@ export class UploadController {
           'บันทึกไฟล์บนเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
         );
       }
-      return {
+      return this.record(user.id, {
         url: `${publicBase()}/uploads/${encodeURIComponent(filename)}`,
         public_id: `local:${filename}`,
         filetype: file.mimetype,
         filesize: file.size,
         filename: originalName,
-      };
+      });
     }
 
     let result: UploadApiResponse;
@@ -133,13 +165,13 @@ export class UploadController {
         'อัปโหลดไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
       );
     }
-    return {
+    return this.record(user.id, {
       url: result.secure_url,
       public_id: result.public_id,
       filetype: file.mimetype,
       filesize: file.size,
       filename: originalName,
-    };
+    });
   }
 
   @Post('delete')
@@ -167,7 +199,7 @@ export class UploadController {
 /** ลบไฟล์บน Cloudinary จาก URL — ใช้ตอน soft delete โพสต์เพื่อไม่ให้ไฟล์ค้าง */
 @Injectable()
 export class UploadService {
-  constructor() {
+  constructor(private readonly prisma: PrismaService) {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
@@ -186,6 +218,12 @@ export class UploadService {
 
   /** best-effort — ลบไม่สำเร็จไม่ทำให้การลบโพสต์ล้ม */
   async destroyByUrls(urls: string[]): Promise<void> {
+    if (urls.length > 0) {
+      // ลบ record ในตาราง Attachment คู่กันไปด้วย
+      await this.prisma.attachment
+        .deleteMany({ where: { file_url: { in: urls } } })
+        .catch(() => undefined);
+    }
     for (const url of urls) {
       // ไฟล์ local — ลบจากโฟลเดอร์ uploads (basename กัน path traversal)
       if (url.includes('/uploads/')) {

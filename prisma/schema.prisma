@@ -39,6 +39,11 @@ enum NotificationType {
   SYSTEM
 }
 
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+}
+
 enum ReportStatus {
   PENDING
   REVIEWED
@@ -113,6 +118,8 @@ model User {
   messages              Message[]            @relation("MessageSender")
   reports_made          Report[]             @relation("ReportReporter")
   reports_reviewed      Report[]             @relation("ReportReviewer")
+  friend_requests_sent  Friendship[]         @relation("FriendRequester")
+  friend_requests_recv  Friendship[]         @relation("FriendAddressee")
   knowledge_documents   KnowledgeDocument[]  @relation("KnowledgeUploader")
   ai_search_logs        AiSearchLog[]
   system_settings       SystemSetting[]      @relation("SettingUpdater")
@@ -444,6 +451,23 @@ model Notification {
 
   @@index([user_id, is_read])
   @@map("km_notification")
+}
+
+// ระบบเพื่อน — requester ส่งคำขอ, addressee กดตอบรับ (PENDING → ACCEPTED)
+model Friendship {
+  id           String           @id @default(uuid())
+  requester_id String
+  addressee_id String
+  status       FriendshipStatus @default(PENDING)
+  created_at   DateTime         @default(now())
+  responded_at DateTime?
+
+  requester User @relation("FriendRequester", fields: [requester_id], references: [id], onDelete: Restrict)
+  addressee User @relation("FriendAddressee", fields: [addressee_id], references: [id], onDelete: Restrict)
+
+  @@unique([requester_id, addressee_id])
+  @@index([addressee_id, status])
+  @@map("km_friendship")
 }
 
 model SearchLog {

@@ -9,6 +9,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { IndexingService } from '../ai-search/indexing.service';
 import { UploadService } from '../upload/upload.module';
+import { NotifyService } from '../common/notify.service';
 import { syncArticleTags } from '../tag/tag.util';
 import {
   CreateArticleDto,
@@ -32,6 +33,7 @@ export class ArticleService {
     private readonly prisma: PrismaService,
     private readonly indexing: IndexingService,
     private readonly uploads: UploadService,
+    private readonly notify: NotifyService,
   ) {}
 
   async findAll(params: {
@@ -337,6 +339,28 @@ export class ArticleService {
     await this.prisma.articleLike.create({
       data: { article_id: articleId, user_id: userId },
     });
+    // แจ้งเตือนเจ้าของบทความ (ไม่แจ้งตอนกดถูกใจของตัวเอง)
+    const article = await this.prisma.article.findUnique({
+      where: { id: articleId },
+      select: { title: true, slug: true, author_id: true },
+    });
+    if (article && article.author_id !== userId) {
+      const liker = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { fname: true, lname: true, display_name: true },
+      });
+      const likerName =
+        liker?.display_name?.trim() ||
+        `${liker?.fname ?? ''} ${liker?.lname ?? ''}`.trim();
+      await this.notify.send({
+        user_id: article.author_id,
+        actor_id: userId,
+        type: 'LIKE',
+        title: 'มีคนถูกใจบทความของคุณ',
+        message: `${likerName} ถูกใจบทความ "${article.title}"`,
+        url: `/articles/${article.slug}`,
+      });
+    }
     return { liked: true };
   }
 
@@ -381,19 +405,55 @@ export class ArticleService {
       },
     });
 
+    const commenterName =
+      comment.user.display_name?.trim() ||
+      `${comment.user.fname} ${comment.user.lname}`;
     if (article.author_id !== userId) {
-      await this.prisma.notification.create({
-        data: {
-          user_id: article.author_id,
-          actor_id: userId,
-          type: 'COMMENT',
-          title: 'มีผู้แสดงความคิดเห็นในบทความของคุณ',
-          message: `${comment.user.fname} ${comment.user.lname} แสดงความคิดเห็นในบทความ "${article.title}"`,
-          url: `/articles/${article.slug}`,
-        },
+      await this.notify.send({
+        user_id: article.author_id,
+        actor_id: userId,
+        type: 'COMMENT',
+        title: 'มีผู้แสดงความคิดเห็นในบทความของคุณ',
+        message: `${commenterName} แสดงความคิดเห็นในบทความ "${article.title}"`,
+        url: `/articles/${article.slug}`,
+      });
+    }
+    // MENTION: คอมเมนต์ที่ขึ้นต้นด้วย @ชื่อ (จากปุ่ม "ตอบกลับ") — แจ้งคนที่ถูกเอ่ยถึง
+    const mentioned = await this.resolveMention(dto.content);
+    if (
+      mentioned &&
+      mentioned.id !== userId &&
+      mentioned.id !== article.author_id
+    ) {
+      await this.notify.send({
+        user_id: mentioned.id,
+        actor_id: userId,
+        type: 'MENTION',
+        title: 'มีคนตอบกลับความคิดเห็นของคุณ',
+        message: `${commenterName} ตอบกลับคุณในบทความ "${article.title}"`,
+        url: `/articles/${article.slug}`,
       });
     }
     return comment;
+  }
+
+  /** หา user จากข้อความที่ขึ้นต้น "@ชื่อ " — เทียบกับชื่อที่แสดง/ชื่อจริงของผู้ใช้ที่ active */
+  private async resolveMention(content: string) {
+    if (!content.startsWith('@')) return null;
+    const firstLine = content.slice(1, 120);
+    const users = await this.prisma.user.findMany({
+      where: { is_active: true },
+      select: { id: true, fname: true, lname: true, display_name: true },
+      take: 500,
+    });
+    for (const u of users) {
+      const names = [
+        u.display_name?.trim(),
+        `${u.fname} ${u.lname}`.trim(),
+      ].filter(Boolean) as string[];
+      if (names.some((n) => firstLine.startsWith(`${n} `))) return u;
+    }
+    return null;
   }
 
   async updateComment(

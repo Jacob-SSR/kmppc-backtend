@@ -12,8 +12,10 @@ import {
   MaxLength,
 } from 'class-validator';
 import { Body, Controller, Module, Post, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotifyService } from '../common/notify.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -41,10 +43,30 @@ export class CreateIssueDto {
   image_urls?: string[];
 }
 
+export class ContactDto {
+  @IsString()
+  @IsNotEmpty({ message: 'กรุณากรอกชื่อผู้ติดต่อ' })
+  @MaxLength(120)
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  contact?: string; // อีเมล/เบอร์โทร/แผนก สำหรับติดต่อกลับ
+
+  @IsString()
+  @IsNotEmpty({ message: 'กรุณากรอกข้อความ' })
+  @MaxLength(2000)
+  message: string;
+}
+
 @Controller('issues')
 @UseGuards(JwtAuthGuard)
 export class IssueController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notify: NotifyService,
+  ) {}
 
   @Post()
   async create(@CurrentUser() user: User, @Body() dto: CreateIssueDto) {
@@ -74,19 +96,51 @@ export class IssueController {
       );
     }
 
-    await this.prisma.notification.createMany({
-      data: recipients.map((r) => ({
-        user_id: r.id,
+    return this.notify.sendMany(
+      recipients.map((r) => r.id),
+      {
         actor_id: user.id,
-        type: 'SYSTEM' as const,
+        type: 'SYSTEM',
         title: '🐞 มีผู้แจ้งปัญหาการใช้งานระบบ',
         message: lines.join('\n'),
         url: link || '/notifications',
-      })),
-    });
-    return { success: true, notified: recipients.length };
+      },
+    );
   }
 }
 
-@Module({ controllers: [IssueController] })
+// หน้า "ติดต่อเรา" — เปิดรับจากคนที่ยังไม่ login ด้วย (จำกัด 5 ครั้ง/นาที กัน spam)
+@Controller('contact')
+export class ContactController {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notify: NotifyService,
+  ) {}
+
+  @Post()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async create(@Body() dto: ContactDto) {
+    const admins = await this.prisma.user.findMany({
+      where: { is_active: true, role: { role_name: 'ADMIN' } },
+      select: { id: true },
+    });
+    const lines = [`ผู้ติดต่อ: ${dto.name.trim()}`];
+    if (dto.contact?.trim())
+      lines.push(`ช่องทางติดต่อกลับ: ${dto.contact.trim()}`);
+    lines.push('', dto.message.trim());
+    await this.notify.sendMany(
+      admins.map((a) => a.id),
+      {
+        actor_id: null,
+        type: 'SYSTEM',
+        title: '📩 มีข้อความจากหน้าติดต่อเรา',
+        message: lines.join('\n'),
+        url: '/notifications',
+      },
+    );
+    return { success: true };
+  }
+}
+
+@Module({ controllers: [IssueController, ContactController] })
 export class IssueModule {}

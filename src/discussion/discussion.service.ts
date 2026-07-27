@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IndexingService } from '../ai-search/indexing.service';
 import { UploadService } from '../upload/upload.module';
+import { NotifyService } from '../common/notify.service';
 import { syncDiscussionTags } from '../tag/tag.util';
 import {
   CreateDiscussionDto,
@@ -31,6 +32,7 @@ export class DiscussionService {
     private readonly prisma: PrismaService,
     private readonly indexing: IndexingService,
     private readonly uploads: UploadService,
+    private readonly notify: NotifyService,
   ) {}
 
   async findAll(params: {
@@ -204,17 +206,15 @@ export class DiscussionService {
 
     // แจ้งเตือนเจ้าของกระทู้ — ห้าม leak ชื่อ actor เมื่อ reply เป็น anonymous
     if (discussion.author_id !== userId) {
-      await this.prisma.notification.create({
-        data: {
-          user_id: discussion.author_id,
-          actor_id: reply.is_anonymous ? null : userId,
-          type: 'REPLY',
-          title: 'มีผู้ตอบกระทู้ของคุณ',
-          message: reply.is_anonymous
-            ? 'มีผู้ตอบกระทู้ของคุณ'
-            : `${reply.author.fname} ${reply.author.lname} ตอบกระทู้ของคุณ`,
-          url: `/discussions/${discussionId}`,
-        },
+      await this.notify.send({
+        user_id: discussion.author_id,
+        actor_id: reply.is_anonymous ? null : userId,
+        type: 'REPLY',
+        title: 'มีผู้ตอบกระทู้ของคุณ',
+        message: reply.is_anonymous
+          ? 'มีผู้ตอบกระทู้ของคุณ'
+          : `${reply.author.fname} ${reply.author.lname} ตอบกระทู้ของคุณ`,
+        url: `/discussions/${discussionId}`,
       });
     }
     return serializeAuthored(reply, userId);
@@ -311,6 +311,22 @@ export class DiscussionService {
     ]);
     // กระทู้ solved แล้ว → เข้าฐานความรู้ AI (title + คำถาม + best answer)
     await this.indexing.enqueue('DISCUSSION', discussionId);
+    // แจ้งเตือนเจ้าของคำตอบ (ไม่แจ้งถ้าเลือกคำตอบตัวเอง)
+    // กระทู้ anonymous: ไม่เปิดเผยชื่อผู้เลือก (actor_id = null, ข้อความกลาง ๆ)
+    const reply = await this.prisma.reply.findUnique({
+      where: { id: replyId },
+      select: { user_id: true },
+    });
+    if (reply && reply.user_id !== userId) {
+      await this.notify.send({
+        user_id: reply.user_id,
+        actor_id: discussion.is_anonymous ? null : userId,
+        type: 'BEST_ANSWER',
+        title: '🏆 คำตอบของคุณถูกเลือกเป็นคำตอบที่ดีที่สุด',
+        message: `คำตอบของคุณในกระทู้ "${discussion.title}" ถูกเลือกเป็นคำตอบที่ดีที่สุด`,
+        url: `/discussions/${discussionId}`,
+      });
+    }
     return { message: 'เลือกคำตอบที่ดีที่สุดเรียบร้อย' };
   }
 
@@ -354,6 +370,28 @@ export class DiscussionService {
     await this.prisma.discussionLike.create({
       data: { discussion_id: discussionId, user_id: userId },
     });
+    // แจ้งเตือนเจ้าของกระทู้ (ไม่แจ้งถูกใจตัวเอง)
+    const discussion = await this.prisma.discussion.findUnique({
+      where: { id: discussionId },
+      select: { title: true, author_id: true },
+    });
+    if (discussion && discussion.author_id !== userId) {
+      const liker = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { fname: true, lname: true, display_name: true },
+      });
+      const likerName =
+        liker?.display_name?.trim() ||
+        `${liker?.fname ?? ''} ${liker?.lname ?? ''}`.trim();
+      await this.notify.send({
+        user_id: discussion.author_id,
+        actor_id: userId,
+        type: 'LIKE',
+        title: 'มีคนถูกใจกระทู้ของคุณ',
+        message: `${likerName} ถูกใจกระทู้ "${discussion.title}"`,
+        url: `/discussions/${discussionId}`,
+      });
+    }
     return { liked: true };
   }
 }

@@ -132,6 +132,137 @@ export class ChatService {
     });
   }
 
+  // ---------- จัดการสมาชิกกลุ่ม ----------
+
+  private async assertGroupAdmin(conversationId: string, userId: string) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation || conversation.type !== 'GROUP') {
+      throw new NotFoundException('ไม่พบกลุ่มสนทนานี้');
+    }
+    const membership = await this.prisma.conversationMember.findFirst({
+      where: {
+        conversation_id: conversationId,
+        user_id: userId,
+        left_at: null,
+      },
+    });
+    if (!membership) throw new ForbiddenException('คุณไม่ได้อยู่ในกลุ่มนี้');
+    if (!membership.is_admin) {
+      throw new ForbiddenException('เฉพาะแอดมินของกลุ่มเท่านั้น');
+    }
+    return conversation;
+  }
+
+  /** เพิ่มสมาชิกเข้ากลุ่ม (แอดมินกลุ่มเท่านั้น) — คนที่เคยออกไปแล้วดึงกลับได้ */
+  async addMembers(
+    conversationId: string,
+    userId: string,
+    memberIds: string[],
+  ) {
+    await this.assertGroupAdmin(conversationId, userId);
+    const ids = [...new Set(memberIds)].filter(Boolean);
+    if (ids.length === 0) {
+      throw new BadRequestException('กรุณาเลือกสมาชิกที่จะเพิ่ม');
+    }
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: ids }, is_active: true },
+      select: { id: true },
+    });
+    if (users.length !== ids.length) {
+      throw new BadRequestException('มีสมาชิกบางคนไม่ถูกต้อง');
+    }
+    for (const id of ids) {
+      const existing = await this.prisma.conversationMember.findUnique({
+        where: {
+          conversation_id_user_id: {
+            conversation_id: conversationId,
+            user_id: id,
+          },
+        },
+      });
+      if (existing) {
+        if (existing.left_at) {
+          await this.prisma.conversationMember.update({
+            where: { id: existing.id },
+            data: { left_at: null },
+          });
+        }
+      } else {
+        await this.prisma.conversationMember.create({
+          data: { conversation_id: conversationId, user_id: id },
+        });
+      }
+    }
+    return { success: true, added: ids.length };
+  }
+
+  /** ถอดสมาชิกออกจากกลุ่ม (แอดมินกลุ่มเท่านั้น, ถอดตัวเองไม่ได้ — ใช้ leave) */
+  async removeMember(conversationId: string, userId: string, targetId: string) {
+    await this.assertGroupAdmin(conversationId, userId);
+    if (targetId === userId) {
+      throw new BadRequestException('ถอดตัวเองไม่ได้ — ใช้ปุ่มออกจากกลุ่มแทน');
+    }
+    const membership = await this.prisma.conversationMember.findFirst({
+      where: {
+        conversation_id: conversationId,
+        user_id: targetId,
+        left_at: null,
+      },
+    });
+    if (!membership) throw new NotFoundException('คนนี้ไม่ได้อยู่ในกลุ่มแล้ว');
+    await this.prisma.conversationMember.update({
+      where: { id: membership.id },
+      data: { left_at: new Date() },
+    });
+    return { success: true };
+  }
+
+  /** ออกจากกลุ่มเอง — แอดมินคนสุดท้ายออก ให้โอนสิทธิ์แอดมินให้สมาชิกที่เหลือคนแรก */
+  async leaveGroup(conversationId: string, userId: string) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation || conversation.type !== 'GROUP') {
+      throw new NotFoundException('ไม่พบกลุ่มสนทนานี้');
+    }
+    const membership = await this.prisma.conversationMember.findFirst({
+      where: {
+        conversation_id: conversationId,
+        user_id: userId,
+        left_at: null,
+      },
+    });
+    if (!membership) throw new BadRequestException('คุณไม่ได้อยู่ในกลุ่มนี้');
+    await this.prisma.conversationMember.update({
+      where: { id: membership.id },
+      data: { left_at: new Date() },
+    });
+    if (membership.is_admin) {
+      const remainingAdmin = await this.prisma.conversationMember.findFirst({
+        where: {
+          conversation_id: conversationId,
+          left_at: null,
+          is_admin: true,
+        },
+      });
+      if (!remainingAdmin) {
+        const next = await this.prisma.conversationMember.findFirst({
+          where: { conversation_id: conversationId, left_at: null },
+          orderBy: { joined_at: 'asc' },
+        });
+        if (next) {
+          await this.prisma.conversationMember.update({
+            where: { id: next.id },
+            data: { is_admin: true },
+          });
+        }
+      }
+    }
+    return { success: true };
+  }
+
   async listMyConversations(userId: string) {
     const memberships = await this.prisma.conversationMember.findMany({
       where: { user_id: userId, left_at: null },

@@ -42,6 +42,31 @@ export class ChatController {
     return this.chat.listMyConversations(user.id);
   }
 
+  // ---------- จัดการสมาชิกกลุ่ม ----------
+
+  @Post('conversations/:id/members')
+  addMembers(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthedUser,
+    @Body() body: { member_ids: string[] },
+  ) {
+    return this.chat.addMembers(id, user.id, body.member_ids ?? []);
+  }
+
+  @Delete('conversations/:id/members/:userId')
+  removeMember(
+    @Param('id') id: string,
+    @Param('userId') targetId: string,
+    @CurrentUser() user: AuthedUser,
+  ) {
+    return this.chat.removeMember(id, user.id, targetId);
+  }
+
+  @Post('conversations/:id/leave')
+  leaveGroup(@Param('id') id: string, @CurrentUser() user: AuthedUser) {
+    return this.chat.leaveGroup(id, user.id);
+  }
+
   @Get('conversations/:id/messages')
   getMessages(
     @Param('id') id: string,

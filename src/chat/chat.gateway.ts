@@ -5,10 +5,12 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { RealtimeRegistry } from '../common/realtime.registry';
 import { Server, Socket } from 'socket.io';
 import { MessageType } from '@prisma/client';
 import { ChatService } from './chat.service';
@@ -38,7 +40,9 @@ const parseCookie = (
   namespace: 'chat',
   cors: { origin: true, credentials: true },
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
+{
   @WebSocketServer()
   server: Server;
 
@@ -49,7 +53,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly chat: ChatService,
     private readonly jwt: JwtService,
+    private readonly realtime: RealtimeRegistry,
   ) {}
+
+  afterInit(server: Server) {
+    // เปิดทางให้โมดูลอื่นยิง event ถึงผู้ใช้ (notification realtime ฯลฯ)
+    this.realtime.setServer(server);
+  }
 
   handleConnection(client: ChatSocket) {
     const userId = this.authenticate(client);
