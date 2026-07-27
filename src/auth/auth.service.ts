@@ -65,7 +65,47 @@ export class AuthService {
       },
       include: { role: true, department: true },
     });
+    // ห้องแชทต้อนรับจาก admin — best-effort ไม่ให้การสมัครล้มเพราะส่วนนี้
+    await this.createWelcomeChat(user.id).catch(() => undefined);
     return this.sanitize(user);
+  }
+
+  /** สร้าง DM ระหว่าง admin กับสมาชิกใหม่ พร้อมข้อความต้อนรับ */
+  private async createWelcomeChat(userId: string) {
+    const admin = await this.prisma.user.findFirst({
+      where: {
+        role: { role_name: 'ADMIN' },
+        is_active: true,
+        NOT: { id: userId },
+      },
+      orderBy: { created_at: 'asc' },
+    });
+    if (!admin) return;
+    const conversation = await this.prisma.conversation.create({
+      data: {
+        type: 'DIRECT',
+        created_by: admin.id,
+        members: {
+          create: [{ user_id: admin.id }, { user_id: userId }],
+        },
+      },
+    });
+    await this.prisma.message.create({
+      data: {
+        conversation_id: conversation.id,
+        sender_id: admin.id,
+        message: [
+          'สวัสดีครับ 👋 ยินดีต้อนรับสู่ระบบจัดการความรู้ (KM) โรงพยาบาลพลับพลาชัย',
+          '',
+          'เริ่มต้นใช้งานได้เลย:',
+          '• อ่าน/เขียนบทความความรู้ และตั้งกระทู้ถาม-ตอบ',
+          '• สงสัยอะไรถาม AI Search ได้ตลอด',
+          '• คู่มือการใช้งานอยู่ที่เมนู "เกี่ยวกับระบบ"',
+          '',
+          'ติดปัญหาการใช้งานตรงไหน ทักแชทนี้หาผู้ดูแลระบบได้เลยครับ',
+        ].join('\n'),
+      },
+    });
   }
 
   async login(dto: LoginDto, meta: { userAgent?: string; ip?: string }) {

@@ -152,6 +152,56 @@ async function main() {
     },
   });
 
+  // ห้องแชทต้อนรับจาก admin ให้สมาชิกทุกคนที่ยังไม่มี (idempotent — รันซ้ำไม่สร้างซ้ำ)
+  const adminUser = await prisma.user.findUnique({
+    where: { username: 'admin' },
+  });
+  if (adminUser) {
+    const welcomeMessage = [
+      'สวัสดีครับ 👋 ยินดีต้อนรับสู่ระบบจัดการความรู้ (KM) โรงพยาบาลพลับพลาชัย',
+      '',
+      'เริ่มต้นใช้งานได้เลย:',
+      '• อ่าน/เขียนบทความความรู้ และตั้งกระทู้ถาม-ตอบ',
+      '• สงสัยอะไรถาม AI Search ได้ตลอด',
+      '• คู่มือการใช้งานอยู่ที่เมนู "เกี่ยวกับระบบ"',
+      '',
+      'ติดปัญหาการใช้งานตรงไหน ทักแชทนี้หาผู้ดูแลระบบได้เลยครับ',
+    ].join('\n');
+    const members = await prisma.user.findMany({
+      where: { is_active: true, NOT: { id: adminUser.id } },
+      select: { id: true },
+    });
+    for (const member of members) {
+      const existing = await prisma.conversation.findFirst({
+        where: {
+          type: 'DIRECT',
+          AND: [
+            { members: { some: { user_id: adminUser.id } } },
+            { members: { some: { user_id: member.id } } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (existing) continue;
+      const conversation = await prisma.conversation.create({
+        data: {
+          type: 'DIRECT',
+          created_by: adminUser.id,
+          members: {
+            create: [{ user_id: adminUser.id }, { user_id: member.id }],
+          },
+        },
+      });
+      await prisma.message.create({
+        data: {
+          conversation_id: conversation.id,
+          sender_id: adminUser.id,
+          message: welcomeMessage,
+        },
+      });
+    }
+  }
+
   // System settings defaults
   for (const [key, value, description] of [
     ['ALLOW_ANONYMOUS', 'true', 'อนุญาตโพสต์แบบไม่ระบุตัวตน (Discussion/Reply)'],
