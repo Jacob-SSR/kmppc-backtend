@@ -137,7 +137,8 @@ async function main() {
   );
   await prisma.user.upsert({
     where: { username: 'admin' },
-    update: {},
+    // อีเมลกลางของระบบ — รันซ้ำจะแก้อีเมล admin เดิมให้ตรงด้วย
+    update: { email: 'kmppch@gmail.com' },
     create: {
       role_id: adminRole.id,
       dept_id: it.id,
@@ -146,8 +147,8 @@ async function main() {
       password_hash: passwordHash,
       fname: 'ผู้ดูแล',
       lname: 'ระบบ',
-      email: 'admin@hospsrisuk.go.th',
-      position: 'System Administrator',
+      email: 'kmppch@gmail.com',
+      position: 'นักวิชาการคอมพิวเตอร์',
     },
   });
 
