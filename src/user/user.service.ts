@@ -206,7 +206,41 @@ export class UserService {
       },
     });
     if (!user) throw new NotFoundException('ไม่พบผู้ใช้งานนี้');
-    return user;
+    // ผลงานล่าสุดของคนนี้ — บทความเผยแพร่ + กระทู้ที่ไม่ anonymous
+    const [articles, discussions] = await Promise.all([
+      this.prisma.article.findMany({
+        where: { author_id: id, deleted_at: null, status: 'PUBLISHED' },
+        orderBy: { published_at: 'desc' },
+        take: 12,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          cover_image: true,
+          view_count: true,
+          published_at: true,
+          category: { select: { category_name: true } },
+          _count: { select: { comments: true, likes: true } },
+        },
+      }),
+      this.prisma.discussion.findMany({
+        where: { author_id: id, deleted_at: null, is_anonymous: false },
+        orderBy: { created_at: 'desc' },
+        take: 12,
+        select: {
+          id: true,
+          title: true,
+          is_solved: true,
+          view_count: true,
+          created_at: true,
+          category: { select: { category_name: true } },
+          _count: {
+            select: { replies: { where: { deleted_at: null } }, likes: true },
+          },
+        },
+      }),
+    ]);
+    return { ...user, articles, discussions };
   }
 
   /** หาผู้ใช้จากรหัสเพื่อน (8 ตัวแรกของ id, ไม่สนตัวพิมพ์) — ใช้เริ่มแชท */

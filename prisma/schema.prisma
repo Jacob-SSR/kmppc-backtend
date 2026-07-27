@@ -504,6 +504,10 @@ model Conversation {
   type       ConversationType
   name       String?
   created_by String
+  // คำขอส่งข้อความ (ทักคนที่ยังไม่เป็นเพื่อน): ผู้ขอส่งได้ 1 ข้อความ
+  // จนกว่าปลายทางจะตอบรับ/ตอบกลับ — is_request=false เมื่อรับแล้ว
+  is_request   Boolean @default(false)
+  requested_by String?
   created_at DateTime         @default(now())
   updated_at DateTime         @updatedAt
 

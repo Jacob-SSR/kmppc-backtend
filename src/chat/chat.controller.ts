@@ -42,6 +42,18 @@ export class ChatController {
     return this.chat.listMyConversations(user.id);
   }
 
+  // ---------- คำขอส่งข้อความ (ทักคนที่ยังไม่เป็นเพื่อน) ----------
+
+  @Post('conversations/:id/accept')
+  acceptRequest(@Param('id') id: string, @CurrentUser() user: AuthedUser) {
+    return this.chat.acceptRequest(id, user.id);
+  }
+
+  @Post('conversations/:id/decline')
+  declineRequest(@Param('id') id: string, @CurrentUser() user: AuthedUser) {
+    return this.chat.declineRequest(id, user.id);
+  }
+
   // ---------- จัดการสมาชิกกลุ่ม ----------
 
   @Post('conversations/:id/members')

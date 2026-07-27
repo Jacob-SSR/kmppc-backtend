@@ -93,10 +93,32 @@ export class ChatService {
       });
       if (existing) return existing;
 
+      // ยังไม่เป็นเพื่อนกัน (และผู้เริ่มไม่ใช่ ADMIN) → เป็น "คำขอส่งข้อความ"
+      // ผู้ขอส่งได้ 1 ข้อความ จนกว่าปลายทางจะตอบรับ
+      const [friendship, creatorIsAdmin] = await Promise.all([
+        this.prisma.friendship.findFirst({
+          where: {
+            status: 'ACCEPTED',
+            OR: [
+              { requester_id: userId, addressee_id: otherId },
+              { requester_id: otherId, addressee_id: userId },
+            ],
+          },
+          select: { id: true },
+        }),
+        this.prisma.user.findFirst({
+          where: { id: userId, role: { role_name: 'ADMIN' } },
+          select: { id: true },
+        }),
+      ]);
+      const isRequest = !friendship && !creatorIsAdmin;
+
       return this.prisma.conversation.create({
         data: {
           type: 'DIRECT',
           created_by: userId,
+          is_request: isRequest,
+          requested_by: isRequest ? userId : null,
           members: {
             create: [{ user_id: userId }, { user_id: otherId }],
           },
@@ -130,6 +152,43 @@ export class ChatService {
         },
       },
     });
+  }
+
+  // ---------- คำขอส่งข้อความ ----------
+
+  /** ตอบรับคำขอส่งข้อความ — เฉพาะฝ่ายที่ถูกทัก */
+  async acceptRequest(conversationId: string, userId: string) {
+    await this.assertMember(conversationId, userId);
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation?.is_request) {
+      return { success: true }; // รับไปแล้ว/ไม่ใช่คำขอ — ไม่ต้องทำอะไร
+    }
+    if (conversation.requested_by === userId) {
+      throw new ForbiddenException('ผู้ส่งคำขอตอบรับเองไม่ได้');
+    }
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { is_request: false, requested_by: null },
+    });
+    return { success: true };
+  }
+
+  /** ปฏิเสธคำขอส่งข้อความ — ลบห้องทิ้ง (ข้อความแรกหายไปด้วย) */
+  async declineRequest(conversationId: string, userId: string) {
+    await this.assertMember(conversationId, userId);
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation?.is_request) {
+      throw new ForbiddenException('ห้องนี้ไม่ใช่คำขอส่งข้อความ');
+    }
+    if (conversation.requested_by === userId) {
+      throw new ForbiddenException('ผู้ส่งคำขอปฏิเสธเองไม่ได้');
+    }
+    await this.prisma.conversation.delete({ where: { id: conversationId } });
+    return { success: true };
   }
 
   // ---------- จัดการสมาชิกกลุ่ม ----------
@@ -341,6 +400,30 @@ export class ChatService {
     dto: SendMessageDto,
   ) {
     await this.assertMember(conversationId, userId);
+
+    // กติกาคำขอส่งข้อความ: ผู้ขอส่งได้ 1 ข้อความจนกว่าปลายทางจะตอบรับ
+    // ปลายทางพิมพ์ตอบเมื่อไหร่ = ตอบรับอัตโนมัติ
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { is_request: true, requested_by: true },
+    });
+    if (conversation?.is_request) {
+      if (conversation.requested_by === userId) {
+        const sent = await this.prisma.message.count({
+          where: { conversation_id: conversationId, deleted_at: null },
+        });
+        if (sent >= 1) {
+          throw new ForbiddenException(
+            'ส่งข้อความแรกไปแล้ว — รออีกฝ่ายตอบรับก่อนจึงจะคุยต่อได้',
+          );
+        }
+      } else {
+        await this.prisma.conversation.update({
+          where: { id: conversationId },
+          data: { is_request: false, requested_by: null },
+        });
+      }
+    }
 
     const [message] = await this.prisma.$transaction([
       this.prisma.message.create({
