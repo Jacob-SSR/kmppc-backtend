@@ -303,6 +303,24 @@ export class ArticleService {
       });
   }
 
+  /** ประวัติเวอร์ชันเนื้อหาบทความ (เก็บอัตโนมัติทุกครั้งที่แก้) — เจ้าของ/แอดมิน */
+  async listVersions(id: string, userId: string, isAdmin: boolean) {
+    const article = await this.prisma.article.findFirst({
+      where: { id, deleted_at: null },
+      select: { id: true, author_id: true, title: true },
+    });
+    if (!article) throw new NotFoundException('ไม่พบบทความนี้');
+    if (article.author_id !== userId && !isAdmin) {
+      throw new ForbiddenException('ดูประวัติได้เฉพาะเจ้าของบทความ');
+    }
+    const versions = await this.prisma.articleVersion.findMany({
+      where: { article_id: id },
+      orderBy: { version_no: 'desc' },
+      include: { editor: { select: authorSelect } },
+    });
+    return { title: article.title, versions };
+  }
+
   async softDelete(id: string, userId: string, isAdmin: boolean) {
     const article = await this.prisma.article.findFirst({
       where: { id, deleted_at: null },

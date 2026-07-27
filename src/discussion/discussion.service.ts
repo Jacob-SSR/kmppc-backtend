@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -8,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { IndexingService } from '../ai-search/indexing.service';
 import { UploadService } from '../upload/upload.module';
 import { NotifyService } from '../common/notify.service';
+import { SettingService } from '../setting/setting.module';
 import { syncDiscussionTags } from '../tag/tag.util';
 import {
   CreateDiscussionDto,
@@ -33,7 +35,19 @@ export class DiscussionService {
     private readonly indexing: IndexingService,
     private readonly uploads: UploadService,
     private readonly notify: NotifyService,
+    private readonly settings: SettingService,
   ) {}
+
+  /** บังคับใช้ค่า ALLOW_ANONYMOUS จากหน้าตั้งค่าระบบ */
+  private async assertAnonymousAllowed(isAnonymous?: boolean) {
+    if (!isAnonymous) return;
+    const allowed = await this.settings.get('ALLOW_ANONYMOUS');
+    if (allowed === 'false') {
+      throw new BadRequestException(
+        'ผู้ดูแลระบบปิดการโพสต์แบบไม่ระบุตัวตนไว้ชั่วคราว กรุณาโพสต์ด้วยชื่อจริง',
+      );
+    }
+  }
 
   async findAll(params: {
     page?: number;
@@ -144,6 +158,7 @@ export class DiscussionService {
   }
 
   async create(authorId: string, dto: CreateDiscussionDto) {
+    await this.assertAnonymousAllowed(dto.is_anonymous);
     const discussion = await this.prisma.discussion.create({
       data: {
         author_id: authorId,
@@ -188,6 +203,7 @@ export class DiscussionService {
   }
 
   async addReply(discussionId: string, userId: string, dto: CreateReplyDto) {
+    await this.assertAnonymousAllowed(dto.is_anonymous);
     const discussion = await this.prisma.discussion.findFirst({
       where: { id: discussionId, deleted_at: null },
     });

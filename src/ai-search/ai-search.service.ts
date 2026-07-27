@@ -10,6 +10,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ChunkSourceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,6 +18,7 @@ import { LLM_PROVIDER } from '../llm/llm.provider';
 import type { LlmProvider } from '../llm/llm.provider';
 import { VectorStoreService } from './vector.store';
 import type { ScoredChunk } from './vector.store';
+import { SettingService } from '../setting/setting.module';
 
 const TOP_K = 6;
 const MIN_SCORE = 0.5;
@@ -59,9 +61,21 @@ export class AiSearchService {
     private readonly prisma: PrismaService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     private readonly vectorStore: VectorStoreService,
+    private readonly settings: SettingService,
   ) {}
 
+  /** บังคับใช้ค่า AI_ENABLED จากหน้าตั้งค่าระบบ */
+  private async assertAiEnabled() {
+    const enabled = await this.settings.get('AI_ENABLED');
+    if (enabled === 'false') {
+      throw new ServiceUnavailableException(
+        'ผู้ดูแลระบบปิดใช้งาน AI Search ไว้ชั่วคราว ลองใหม่ภายหลังนะครับ',
+      );
+    }
+  }
+
   async ask(userId: string, query: string): Promise<AiSearchResult> {
+    await this.assertAiEnabled();
     const startedAt = Date.now();
     const info = this.llm.info?.() ?? {
       provider: process.env.AI_PROVIDER ?? 'gemini',
@@ -120,6 +134,7 @@ export class AiSearchService {
     userId: string,
     query: string,
   ): AsyncGenerator<AiSearchStreamEvent> {
+    await this.assertAiEnabled();
     const startedAt = Date.now();
     const info = this.llm.info?.() ?? {
       provider: process.env.AI_PROVIDER ?? 'gemini',
@@ -186,6 +201,7 @@ export class AiSearchService {
    * ใช้เมื่อผู้ใช้กดปุ่ม "ค้นจากอินเทอร์เน็ต" หลังฐานความรู้ไม่มีคำตอบ
    */
   async askWeb(userId: string, query: string) {
+    await this.assertAiEnabled();
     if (!this.llm.generateWebAnswer) {
       throw new NotFoundException(
         'AI provider ปัจจุบันยังไม่รองรับการค้นจากอินเทอร์เน็ต',

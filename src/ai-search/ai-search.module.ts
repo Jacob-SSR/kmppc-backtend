@@ -9,6 +9,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { LlmModule } from '../llm/llm.module';
+import { SettingModule } from '../setting/setting.module';
 import { VectorStoreService } from './vector.store';
 import { IndexingProcessor } from './indexing.processor';
 import { INDEXING_QUEUE, IndexingService } from './indexing.service';
@@ -16,7 +17,11 @@ import { AiSearchService } from './ai-search.service';
 import { AiSearchController } from './ai-search.controller';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: INDEXING_QUEUE }), LlmModule],
+  imports: [
+    BullModule.registerQueue({ name: INDEXING_QUEUE }),
+    LlmModule,
+    SettingModule,
+  ],
   controllers: [AiSearchController],
   providers: [
     VectorStoreService,

@@ -104,6 +104,17 @@ export class ArticleController {
     );
   }
 
+  // ประวัติเวอร์ชันเนื้อหา (เจ้าของ/แอดมิน)
+  @Get(':id/versions')
+  @UseGuards(JwtAuthGuard)
+  listVersions(@Param('id') id: string, @CurrentUser() user: AuthedUser) {
+    return this.articles.listVersions(
+      id,
+      user.id,
+      user.role.role_name === 'ADMIN',
+    );
+  }
+
   @Post(':id/like')
   @UseGuards(JwtAuthGuard)
   toggleLike(@Param('id') id: string, @CurrentUser() user: AuthedUser) {

@@ -24,6 +24,7 @@ import type { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { SettingModule, SettingService } from '../setting/setting.module';
 
 // โหมดเก็บไฟล์: รูปภาพเก็บบน Cloudinary เสมอ (ถ้าตั้งค่าไว้) ส่วนไฟล์เอกสาร
 // เก็บ local เมื่อ UPLOAD_STORAGE=local — ไม่มี CLOUDINARY_* เลยก็ local ทั้งหมด
@@ -47,7 +48,10 @@ export class DeleteUploadDto {
 @Controller('upload')
 @UseGuards(JwtAuthGuard)
 export class UploadController {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingService,
+  ) {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
@@ -95,6 +99,13 @@ export class UploadController {
   ) {
     if (!file) {
       throw new BadRequestException('กรุณาแนบไฟล์ที่ต้องการอัปโหลด');
+    }
+    // บังคับใช้ MAX_UPLOAD_SIZE_MB จากหน้าตั้งค่าระบบ (เพดานแข็ง 10MB ที่ multer)
+    const maxMb = Number((await this.settings.get('MAX_UPLOAD_SIZE_MB')) ?? 10);
+    if (maxMb > 0 && file.size > maxMb * 1024 * 1024) {
+      throw new BadRequestException(
+        `ไฟล์ใหญ่เกินขนาดที่ระบบกำหนด (${maxMb}MB)`,
+      );
     }
     // multer ถอดรหัสชื่อไฟล์เป็น latin1 — แปลงกลับเป็น utf8 ไม่งั้นชื่อไทยเพี้ยน
     const originalName = Buffer.from(file.originalname, 'latin1').toString(
@@ -257,6 +268,7 @@ export class UploadService {
 }
 
 @Module({
+  imports: [SettingModule],
   controllers: [UploadController],
   providers: [UploadService],
   exports: [UploadService],
