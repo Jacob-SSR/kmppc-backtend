@@ -3,9 +3,17 @@ FROM node:22-alpine
 RUN apk add --no-cache openssl && corepack enable
 WORKDIR /app
 
+# เน็ตองค์กรช้า — ยืด timeout + retry ให้ pnpm ไม่ล้มกลางทาง
+ENV npm_config_fetch_timeout=600000 \
+    npm_config_fetch_retries=5 \
+    npm_config_fetch_retry_maxtimeout=120000
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY prisma ./prisma
-RUN pnpm install --frozen-lockfile
+# cache store ของ pnpm ข้ามรอบ build — ล้มแล้ว build ใหม่ไม่ต้องโหลดซ้ำทั้งหมด
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
+    pnpm config set store-dir /pnpm-store && \
+    pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm prisma:generate && pnpm build
