@@ -99,7 +99,20 @@ export class DiscussionService {
       this.prisma.discussion.count({ where }),
     ]);
     return {
-      items: items.map((d) => serializeAuthored(d, params.viewerId)),
+      // หน้า list โชว์เนื้อหาแบบ line-clamp ไม่กี่บรรทัด — ตัดเหลือ 500 ตัวอักษรพอ
+      // (ไม่ส่งกระทู้ยาว ๆ เต็ม ๆ ทีละ 10-50 รายการ ทำให้ response ใหญ่และช้า)
+      items: items.map((d) =>
+        serializeAuthored(
+          {
+            ...d,
+            content:
+              d.content.length > 500
+                ? `${d.content.slice(0, 500)}…`
+                : d.content,
+          },
+          params.viewerId,
+        ),
+      ),
       total,
       page,
       limit,

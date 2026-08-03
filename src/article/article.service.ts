@@ -75,6 +75,8 @@ export class ArticleService {
         orderBy: [{ is_pinned: 'desc' }, orderBy],
         skip: (page - 1) * limit,
         take: limit,
+        // หน้า list ใช้แค่ excerpt — ไม่ส่ง content เต็ม (payload ใหญ่ ทำให้โหลดช้า)
+        omit: { content: true },
         include: {
           author: { select: authorSelect },
           category: true,
@@ -91,6 +93,7 @@ export class ArticleService {
     return this.prisma.article.findMany({
       where: { author_id: userId, deleted_at: null },
       orderBy: { created_at: 'desc' },
+      omit: { content: true },
       include: {
         category: true,
         author: { select: authorSelect },
